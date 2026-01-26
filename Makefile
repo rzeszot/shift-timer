@@ -1,32 +1,39 @@
-MCU       := atmega328p
-F_CPU     := 16000000UL
-PORT      := /dev/cu.usbserial-2110
-BAUD      := 115200
-TARGET    := main
-SRC       := main.c
+MCU := atmega328p
+F_CPU := 16000000UL
+PORT := /dev/cu.usbserial-2110
+BAUD := 115200
+TARGET := main
+BUILD := .build
+SRC := $(wildcard *.c)
+OBJ := $(patsubst %.c,$(BUILD)/%.o,$(SRC))
 
 # Tools
-CC        := avr-gcc
-OBJCOPY   := avr-objcopy
-AVRDUDE   := avrdude
+CC := avr-gcc
+OBJCOPY := avr-objcopy
+AVRDUDE := avrdude
 
 # Flags
-CFLAGS    := -mmcu=$(MCU) -DF_CPU=$(F_CPU) -Os -Wall
-LDFLAGS   := -mmcu=$(MCU)
+CFLAGS := -mmcu=$(MCU) -DF_CPU=$(F_CPU) -Os -Wall
+LDFLAGS := -mmcu=$(MCU)
 # Outputs
-ELF       := $(TARGET).elf
-HEX       := $(TARGET).hex
+ELF := $(BUILD)/$(TARGET).elf
+HEX := $(BUILD)/$(TARGET).hex
 
 .PHONY: all build flash clean size help
 
 # Default target
 all: build
 
-# Build ELF and HEX
-build: $(HEX)
+build: | $(BUILD) $(HEX)
 
-$(ELF): $(SRC)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
+$(BUILD):
+	@mkdir -p $(BUILD)
+
+$(ELF): $(OBJ)
+	$(CC) $(LDFLAGS) -o $@ $^
+
+$(BUILD)/%.o: %.c | $(BUILD)
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(HEX): $(ELF)
 	$(OBJCOPY) -O ihex $< $@
@@ -41,7 +48,7 @@ size: $(ELF)
 
 # Clean artifacts
 clean:
-	rm -f $(ELF) $(HEX)
+	rm -rf $(BUILD)
 
 # Quick help
 help:

@@ -1,6 +1,10 @@
 #include <avr/io.h>
+#include <avr/interrupt.h>
 #include <util/delay.h>
 #include <stdint.h>
+
+#include "relay.h"
+#include "tm.h"
 
 #define TM_DDR   DDRC
 #define TM_PORT  PORTC
@@ -9,195 +13,167 @@
 #define TM_CLK   PC1
 #define TM_DIO   PC2
 
-#define REL_PORT PORTC
-#define REL_DDR  DDRC
-#define REL_A    PC3
+IO io_rel_pc3;
+Relay rel_1;
 
-static inline void tm_delay() {
-    _delay_us(2);
-}
+IO io_tm_stb;
+IO io_tm_clk;
+IO io_tm_dio;
 
-static inline void stb_low() {
-    TM_PORT &= ~_BV(TM_STB);
-}
-
-static inline void stb_high() {
-    TM_PORT |= _BV(TM_STB);
-}
-
-static inline void clk_low() {
-    TM_PORT &= ~_BV(TM_CLK);
-}
-
-static inline void clk_high() {
-    TM_PORT |= _BV(TM_CLK);
-}
-
-static inline void dio_out() {
-    TM_DDR |= _BV(TM_DIO);
-}
-
-static inline void dio_in_pullup() {
-    TM_DDR &= ~_BV(TM_DIO);
-    TM_PORT |= _BV(TM_DIO);
-}
-
-static inline void dio_low() {
-    dio_out();
-    TM_PORT &= ~_BV(TM_DIO);
-}
-
-static inline void dio_high() {
-    dio_out();
-    TM_PORT |= _BV(TM_DIO);
-}
-
-static inline uint8_t dio_read() {
-    return (TM_PIN & _BV(TM_DIO)) ? 1 : 0;
-}
-
-static void tm_bus_init() {
-    TM_DDR |= _BV(TM_STB) | _BV(TM_CLK);
-    TM_PORT |= _BV(TM_STB) | _BV(TM_CLK);
-
-    dio_in_pullup();
-}
-
-static inline void relay_init() {
-    REL_DDR |= _BV(REL_A);
-    REL_PORT |= _BV(REL_A);
-}
-
-static inline void relay_set(uint8_t on) {
-    if (on) {
-        REL_PORT &= ~_BV(REL_A);
-    } else {
-        REL_PORT |= _BV(REL_A);
-    }
-}
-
-static void tm_start() {
-    dio_out();
-    stb_low();
-    tm_delay();
-}
-
-static void tm_stop() {
-    stb_high();
-    tm_delay();
-    dio_in_pullup();
-}
-
-static void tm_write_byte(uint8_t b) {
-    dio_out();
-
-    for (uint8_t i = 0; i < 8; i++) {
-        clk_low();
-        tm_delay();
-
-        if (b & 0x01) {
-            dio_high();
-        } else {
-            dio_low();
-        }
-
-        tm_delay();
-        clk_high();
-        tm_delay();
-
-        b >>= 1;
-    }
-}
-
-static uint8_t tm_read_byte() {
-    uint8_t b = 0;
-    dio_in_pullup();
-
-    for (uint8_t i = 0; i < 8; i++) {
-        clk_low();
-        tm_delay();
-        clk_high();
-        tm_delay();
-        if (dio_read()) {
-            b |= (1 << i);
-        }
-    }
-
-    return b;
-}
-
-static void tm_cmd(uint8_t c) {
-    tm_start();
-    tm_write_byte(c);
-    tm_stop();
-}
-
-static void tm_set_brightness(uint8_t b) {
-    if (b > 7) {
-        b = 7;
-    }
-
-    tm_cmd(0x88 | b);
-}
-
-static void tm_write_data_auto(uint8_t addr, const uint8_t *data, uint8_t len) {
-    tm_cmd(0x40);
-    tm_start();
-    tm_write_byte(0xC0 | (addr & 0x0F));
-
-    for (uint8_t i = 0; i < len; i++) {
-        tm_write_byte(data[i]);
-    }
-
-    tm_stop();
-}
+TM tm;
 
 static const uint8_t seg_digit[10] = {
     0x3f, 0x06, 0x5b, 0x4f, 0x66, 0x6d, 0x7d, 0x07, 0x7f, 0x6f
 };
 
-static void tm_clear(void) {
-    uint8_t zeros[16] = {0};
-    tm_write_data_auto(0, zeros, 16);
+static volatile uint16_t g_ms = 0;
+static volatile uint8_t g_tick_1s = 0;
+
+static void timer1_init_1ms() {
+    TCCR1A = 0;
+    TCCR1B = (1<<WGM12) | (1<<CS11) | (1<<CS10);
+    OCR1A  = 249;
+    TIMSK1 = (1<<OCIE1A);
 }
 
-static uint8_t tm_read_keys() {
-    uint8_t keys = 0;
-    tm_start();
-    tm_write_byte(0x42);
-
-    for (uint8_t i = 0; i < 4; i++) {
-        uint8_t v = tm_read_byte();
-        keys |= (v << i);
+ISR(TIMER1_COMPA_vect) {
+    if (++g_ms >= 1000){
+        g_ms = 0;
+        g_tick_1s = 1;
     }
-
-    tm_stop();
-    return keys;
 }
 
-int main(void) {
-    tm_bus_init();
-    relay_init();
+uint16_t total = 90;
+uint16_t left = 90;
+uint8_t blink = 0;
 
-    tm_set_brightness(7);
-    tm_clear();
+struct time_hms_t {
+    uint8_t h1;
+    uint8_t h2;
+    uint8_t m1;
+    uint8_t m2;
+    uint8_t s1;
+    uint8_t s2;
+};
+
+static struct time_hms_t convert_to_time(uint16_t left) {
+    uint16_t hh = left / 3600;
+    uint16_t rem = left % 3600;
+    uint16_t mm = rem / 60;
+    uint16_t ss = rem % 60;
+
+    struct time_hms_t t;
+    t.h1 = (hh / 10) % 10;
+    t.h2 = (hh /  1) % 10;
+    t.m1 = (mm / 10) % 10;
+    t.m2 = (mm /  1) % 10;
+    t.s1 = (ss / 10) % 10;
+    t.s2 = (ss /  1) % 10;
+    return t;
+}
+
+void start() {
+    io_rel_pc3 = io_new_pc3();
+    rel_1 = relay_new(&io_rel_pc3);
+
+    io_tm_stb = io_new_pc0();
+    io_tm_clk = io_new_pc1();
+    io_tm_dio = io_new_pc2();
+
+    tm = tm_new(&io_tm_stb, &io_tm_clk, &io_tm_dio);
+
+    tm_set_brightness(&tm, 7);
+
+    uint8_t logo[16] = {
+        0x38, // L
+        0x00,
+        0x5B, // 2
+        0x00,
+        0x73, // P
+        0x00,
+        0x6D, // S
+        0x00,
+        0x76, // H
+        0x00,
+        0x00,
+        0x00,
+        0x5b, // 2
+        0x00,
+        0x7d, // 6
+        0x00
+    };
+    tm_write_data(&tm, 0, logo, 16);
+
+    _delay_ms(2000);
+
+    uint8_t version[16] = {
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x3f | 0x80, // 0.
+        0x00,
+        0x3f | 0x80, // 0.
+        0x00,
+        0x06, // 1
+        0x00
+    };
+    tm_write_data(&tm, 0, version, 16);
+
+    _delay_ms(1000);
+}
+
+void loop() {
+
+}
+
+int main() {
+    start();
+
+    timer1_init_1ms();
+    sei();
+    
 
     while (1) {
+        loop();
         _delay_ms(50);
 
-        uint8_t k = tm_read_keys();
+        uint8_t k = tm_read_keys(&tm);
 
         uint8_t buf[16] = {0};
 
         buf[0] = k & 0x0F;
         buf[2] = (k >> 4) & 0x0F;
 
-        for (uint8_t i=0; i<8; i++) {
-            buf[i * 2 + 1] = (k & ( 1 << i)) ? 1 : 0;
+        if (g_tick_1s){
+            g_tick_1s = 0;
+            left -= 1;
+
+            blink ^= 1;
         }
 
-        tm_write_data_auto(0, buf, 16);
+        struct time_hms_t time = convert_to_time(left);
 
-        relay_set(k != 0);
+        buf[4] = seg_digit[time.h1];
+        buf[6] = seg_digit[time.h2];
+        buf[8]  = seg_digit[time.m1];
+        buf[10] = seg_digit[time.m2];
+        buf[12] = seg_digit[time.s1];
+        buf[14] = seg_digit[time.s2];
+        if (blink) {
+            buf[6] |= 0x80;
+        } else {
+            buf[10] |= 0x80;
+        }
+
+        tm_write_data(&tm, 0, buf, 16);
+
+        relay_set(&rel_1, k != 0);
     }
 }
