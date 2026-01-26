@@ -1,0 +1,53 @@
+MCU       := atmega328p
+F_CPU     := 16000000UL
+PORT      := /dev/cu.usbserial-2110
+BAUD      := 115200
+TARGET    := main
+SRC       := main.c
+
+# Tools
+CC        := avr-gcc
+OBJCOPY   := avr-objcopy
+AVRDUDE   := avrdude
+
+# Flags
+CFLAGS    := -mmcu=$(MCU) -DF_CPU=$(F_CPU) -Os -Wall
+LDFLAGS   := -mmcu=$(MCU)
+# Outputs
+ELF       := $(TARGET).elf
+HEX       := $(TARGET).hex
+
+.PHONY: all build flash clean size help
+
+# Default target
+all: build
+
+# Build ELF and HEX
+build: $(HEX)
+
+$(ELF): $(SRC)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
+
+$(HEX): $(ELF)
+	$(OBJCOPY) -O ihex $< $@
+
+# Flash to device
+flash: $(HEX)
+	$(AVRDUDE) -c arduino -p m328p -P $(PORT) -b $(BAUD) -U flash:w:$(HEX)
+
+# Show size (optional if avr-size is available)
+size: $(ELF)
+	-@command -v avr-size >/dev/null 2>&1 && avr-size -C --mcu=$(MCU) $(ELF) || echo "avr-size not found"
+
+# Clean artifacts
+clean:
+	rm -f $(ELF) $(HEX)
+
+# Quick help
+help:
+	@echo "Makefile targets:"
+	@echo "  all/build  - Build $(HEX) for $(MCU) @ $(F_CPU)"
+	@echo "  flash      - Flash $(HEX) to device on $(PORT) @ $(BAUD)"
+	@echo "  size       - Print binary size (if avr-size available)"
+	@echo "  clean      - Remove build artifacts"
+	@echo "Variables you can override, e.g.: make PORT=/dev/ttyACM0 BAUD=57600"
