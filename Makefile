@@ -14,6 +14,8 @@ AVRDUDE := avrdude
 
 # Flags
 CFLAGS := -mmcu=$(MCU) -DF_CPU=$(F_CPU) -Os -Wall
+CFLAGS += -DAPP_VERSION_STRING=\"$(shell git describe --no-abbrev)\"
+
 LDFLAGS := -mmcu=$(MCU)
 
 # Outputs

@@ -20,11 +20,14 @@ void lzpsh_setup(uint8_t array[16]) {
         array[i * 2] = lzpsh_7seg[i];
     }
 
-    array[5 * 2] = 0x00;
-    array[6 * 2] = 0x5b; // 2
-    array[7 * 2] = 0x7d; // 6
+    array[5 * 2] = segment_for_character(' ');
+    array[6 * 2] = segment_for_int(2);
+    array[7 * 2] = segment_for_int(6);
 }
 
+void version_setup(uint8_t array[16]) {
+    build_version_segments(APP_VERSION_STRING, array);
+}
 
 static volatile uint16_t g_ms = 0;
 static volatile uint8_t g_tick_1s = 0;
@@ -89,26 +92,11 @@ void start() {
     tm_write_data(&tm, 0, logo, 16);
     _delay_ms(2000);
 
-    uint8_t version[16] = {
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x3f | 0x80, // 0.
-        0x00,
-        0x3f | 0x80, // 0.
-        0x00,
-        0x06, // 1
-        0x00
-    };
+    uint8_t version[16] = { 0x00 };
+    version_setup(version);
     tm_write_data(&tm, 0, version, 16);
     _delay_ms(2000);
+
 
     sei();
 }
@@ -142,16 +130,16 @@ int main() {
 
         struct time_hms_t time = convert_to_time(left);
 
-        buf[4]  = segment_for_character(time.h1);
-        buf[6]  = segment_for_character(time.h2);
-        buf[8]  = segment_for_character(time.m1);
-        buf[10] = segment_for_character(time.m2);
-        buf[12] = segment_for_character(time.s1);
-        buf[14] = segment_for_character(time.s2);
+        buf[4]  = segment_for_int(time.h1);
+        buf[6]  = segment_for_int(time.h2);
+        buf[8]  = segment_for_int(time.m1);
+        buf[10] = segment_for_int(time.m2);
+        buf[12] = segment_for_int(time.s1);
+        buf[14] = segment_for_int(time.s2);
         if (blink) {
-            buf[6] |= 0x80;
+            buf[6] |= segment_dot;
         } else {
-            buf[10] |= 0x80;
+            buf[10] |= segment_dot;
         }
 
         tm_write_data(&tm, 0, buf, 16);

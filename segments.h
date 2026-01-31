@@ -4,6 +4,8 @@
 #include <stdint.h>
 
 uint8_t segment_for_character(char c);
+uint8_t segment_for_int(uint8_t value);
+
 extern const uint8_t segment_dot;
 
 #endif
