@@ -2,16 +2,9 @@
 #include <avr/interrupt.h>
 #include <util/delay.h>
 #include <stdint.h>
-
 #include "relay.h"
 #include "tm.h"
-
-#define TM_DDR   DDRC
-#define TM_PORT  PORTC
-#define TM_PIN   PINC
-#define TM_STB   PC0
-#define TM_CLK   PC1
-#define TM_DIO   PC2
+#include "lzpsh.h"
 
 IO io_rel_pc3;
 Relay rel_1;
@@ -21,6 +14,16 @@ IO io_tm_clk;
 IO io_tm_dio;
 
 TM tm;
+
+void lzpsh_setup(uint8_t array[16]) {
+    for (uint8_t i = 0; i < 5; i++) {
+        array[i * 2] = lzpsh_7seg[i];
+    }
+
+    array[5 * 2] = 0x00;
+    array[6 * 2] = 0x5b; // 2
+    array[7 * 2] = 0x7d; // 6
+}
 
 static const uint8_t seg_digit[10] = {
     0x3f, 0x06, 0x5b, 0x4f, 0x66, 0x6d, 0x7d, 0x07, 0x7f, 0x6f
@@ -84,24 +87,9 @@ void start() {
 
     tm_set_brightness(&tm, 7);
 
-    uint8_t logo[16] = {
-        0x38, // L
-        0x00,
-        0x5B, // 2
-        0x00,
-        0x73, // P
-        0x00,
-        0x6D, // S
-        0x00,
-        0x76, // H
-        0x00,
-        0x00,
-        0x00,
-        0x5b, // 2
-        0x00,
-        0x7d, // 6
-        0x00
-    };
+    uint8_t logo[16] = { 0x00 };
+    lzpsh_setup(logo);
+
     tm_write_data(&tm, 0, logo, 16);
 
     _delay_ms(2000);
@@ -138,7 +126,6 @@ int main() {
 
     timer1_init_1ms();
     sei();
-    
 
     while (1) {
         loop();
