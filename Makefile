@@ -15,6 +15,7 @@ AVRDUDE := avrdude
 # Flags
 CFLAGS := -mmcu=$(MCU) -DF_CPU=$(F_CPU) -Os -Wall
 LDFLAGS := -mmcu=$(MCU)
+
 # Outputs
 ELF := $(BUILD)/$(TARGET).elf
 HEX := $(BUILD)/$(TARGET).hex

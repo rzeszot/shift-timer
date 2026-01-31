@@ -5,15 +5,14 @@
 #include "relay.h"
 #include "tm.h"
 #include "lzpsh.h"
+#include "segments.h"
 #include "version.h"
 
 IO io_rel_pc3;
 Relay rel_1;
-
 IO io_tm_stb;
 IO io_tm_clk;
 IO io_tm_dio;
-
 TM tm;
 
 void lzpsh_setup(uint8_t array[16]) {
@@ -26,9 +25,6 @@ void lzpsh_setup(uint8_t array[16]) {
     array[7 * 2] = 0x7d; // 6
 }
 
-static const uint8_t seg_digit[10] = {
-    0x3f, 0x06, 0x5b, 0x4f, 0x66, 0x6d, 0x7d, 0x07, 0x7f, 0x6f
-};
 
 static volatile uint16_t g_ms = 0;
 static volatile uint8_t g_tick_1s = 0;
@@ -90,9 +86,7 @@ void start() {
 
     uint8_t logo[16] = { 0x00 };
     lzpsh_setup(logo);
-
     tm_write_data(&tm, 0, logo, 16);
-
     _delay_ms(2000);
 
     uint8_t version[16] = {
@@ -114,8 +108,9 @@ void start() {
         0x00
     };
     tm_write_data(&tm, 0, version, 16);
+    _delay_ms(2000);
 
-    _delay_ms(1000);
+    sei();
 }
 
 void loop() {
@@ -126,7 +121,6 @@ int main() {
     start();
 
     timer1_init_1ms();
-    sei();
 
     while (1) {
         loop();
@@ -148,12 +142,12 @@ int main() {
 
         struct time_hms_t time = convert_to_time(left);
 
-        buf[4] = seg_digit[time.h1];
-        buf[6] = seg_digit[time.h2];
-        buf[8]  = seg_digit[time.m1];
-        buf[10] = seg_digit[time.m2];
-        buf[12] = seg_digit[time.s1];
-        buf[14] = seg_digit[time.s2];
+        buf[4]  = segment_for_character(time.h1);
+        buf[6]  = segment_for_character(time.h2);
+        buf[8]  = segment_for_character(time.m1);
+        buf[10] = segment_for_character(time.m2);
+        buf[12] = segment_for_character(time.s1);
+        buf[14] = segment_for_character(time.s2);
         if (blink) {
             buf[6] |= 0x80;
         } else {
