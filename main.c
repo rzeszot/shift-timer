@@ -5,6 +5,7 @@
 #include "relay.h"
 #include "tm.h"
 #include "lzpsh.h"
+#include "version.h"
 
 IO io_rel_pc3;
 Relay rel_1;
