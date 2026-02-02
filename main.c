@@ -109,6 +109,9 @@ int32_t delay_held = 0;
 void reset() {
     shift_time = 2 * 60;
     shift_mode = SETUP;
+    delay_held = 0;
+
+    relay_off(&rel_1);
 }
 
 void start() {
@@ -129,11 +132,11 @@ void start() {
 //    lzpsh_setup(logo);
 //    tm_write_data(&tm, 0, logo, 16);
 //    _delay_ms(2000);
-//
-//    uint8_t version[16] = { 0x00 };
-//    version_setup(version);
-//    tm_write_data(&tm, 0, version, 16);
-//    _delay_ms(2000);
+
+    uint8_t version[16] = { 0x00 };
+    version_setup(version);
+    tm_write_data(&tm, 0, version, 16);
+    _delay_ms(2000);
 
     timer1_init_1ms();
     sei();
@@ -186,7 +189,6 @@ void update_display(int16_t value) {
 }
 
 void shift_setup(uint32_t delta_ms) {
-
     if (delay_held > 0) {
         delay_held = delay_held - delta_ms;
     } else {
