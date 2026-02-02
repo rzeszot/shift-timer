@@ -7,6 +7,33 @@
 #include "lzpsh.h"
 #include "segments.h"
 #include "version.h"
+#include "keyboard.h"
+
+
+#define MAX(a,b) ((a) > (b) ? (a) : (b))
+#define MIN(a,b) ((a) < (b) ? (a) : (b))
+#define CLAMP(v,a,b) MIN(MAX(v, a), b)
+
+
+
+#define KEY_S1 0b00000001
+#define KEY_S2 0b0000010
+#define KEY_S3 0b0000100
+#define KEY_S4 0b0001000
+#define KEY_S5 0b00010000
+#define KEY_S6 0b00100000
+#define KEY_S7 0b01000000
+#define KEY_S8 0b10000000
+
+#define KEY_PRESSED(keyboard, key) ((keyboard & key) == key)
+
+
+volatile uint8_t check_keyboard = 0;
+volatile uint8_t check_reset = 0;
+volatile uint8_t check_tick_1s = 0;
+
+
+int8_t buzz_1 = 0;
 
 IO io_rel_pc3;
 Relay rel_1;
@@ -30,7 +57,6 @@ void version_setup(uint8_t array[16]) {
 }
 
 static volatile uint16_t g_ms = 0;
-static volatile uint8_t g_tick_1s = 0;
 
 static void timer1_init_1ms() {
     TCCR1A = 0;
@@ -39,40 +65,50 @@ static void timer1_init_1ms() {
     TIMSK1 = (1<<OCIE1A);
 }
 
+
+typedef enum {
+    SETUP,
+    RUNNING,
+    ALARM
+} shift_mode_t;
+
+shift_mode_t shift_mode;
+
 ISR(TIMER1_COMPA_vect) {
-    if (++g_ms >= 1000){
-        g_ms = 0;
-        g_tick_1s = 1;
+    static uint16_t sec_cnt = 0;
+
+    g_ms++;
+    check_keyboard = 1;
+
+    if (++sec_cnt >= 1000) {
+        sec_cnt = 0;
+        check_tick_1s = 1;
     }
 }
 
-uint16_t total = 90;
-uint16_t left = 90;
-uint8_t blink = 0;
 
-struct time_hms_t {
-    uint8_t h1;
-    uint8_t h2;
-    uint8_t m1;
-    uint8_t m2;
-    uint8_t s1;
-    uint8_t s2;
-};
-
-static struct time_hms_t convert_to_time(uint16_t left) {
-    uint16_t hh = left / 3600;
-    uint16_t rem = left % 3600;
-    uint16_t mm = rem / 60;
-    uint16_t ss = rem % 60;
-
-    struct time_hms_t t;
-    t.h1 = (hh / 10) % 10;
-    t.h2 = (hh /  1) % 10;
-    t.m1 = (mm / 10) % 10;
-    t.m2 = (mm /  1) % 10;
-    t.s1 = (ss / 10) % 10;
-    t.s2 = (ss /  1) % 10;
+static uint32_t ms_get_atomic() {
+    uint32_t t;
+    uint8_t s = SREG;
+    cli();
+    t = g_ms;
+    SREG = s;
     return t;
+}
+
+
+keyboard_t keys;
+
+int16_t shift_time = 0;
+int16_t shift_left = 0;
+
+
+int32_t delay_held = 0;
+
+
+void reset() {
+    shift_time = 2 * 60;
+    shift_mode = SETUP;
 }
 
 void start() {
@@ -87,63 +123,187 @@ void start() {
 
     tm_set_brightness(&tm, 7);
 
-    uint8_t logo[16] = { 0x00 };
-    lzpsh_setup(logo);
-    tm_write_data(&tm, 0, logo, 16);
-    _delay_ms(2000);
+    keys = keyboard_new();
 
-    uint8_t version[16] = { 0x00 };
-    version_setup(version);
-    tm_write_data(&tm, 0, version, 16);
-    _delay_ms(2000);
+//    uint8_t logo[16] = { 0x00 };
+//    lzpsh_setup(logo);
+//    tm_write_data(&tm, 0, logo, 16);
+//    _delay_ms(2000);
+//
+//    uint8_t version[16] = { 0x00 };
+//    version_setup(version);
+//    tm_write_data(&tm, 0, version, 16);
+//    _delay_ms(2000);
 
-
+    timer1_init_1ms();
     sei();
 }
 
-void loop() {
+// MARK: -
 
+
+typedef struct {
+    uint8_t m1;
+    uint8_t m2;
+    uint8_t s1;
+    uint8_t s2;
+} display_time_t;
+
+display_time_t convert_to_display_time(uint16_t value) {
+    uint16_t mm = value / 60;
+    uint16_t ss = value % 60;
+
+    display_time_t t;
+    t.m1 = (mm / 10) % 10;
+    t.m2 = (mm /  1) % 10;
+    t.s1 = (ss / 10) % 10;
+    t.s2 = (ss /  1) % 10;
+    return t;
+}
+
+void display_store_time(display_time_t time, uint8_t buffer[16]) {
+    buffer[0]  = segment_for_int(time.m1);
+    buffer[2] = segment_for_int(time.m2);
+    buffer[4] = segment_for_int(time.s1);
+    buffer[6] = segment_for_int(time.s2);
+}
+
+
+void update_display(int16_t value) {
+    uint8_t buffer[16] = {0};
+
+    buffer[12] = keys.current;
+    buffer[14] = keys.held;
+
+    display_time_t time = convert_to_display_time(value);
+    display_store_time(time, buffer);
+
+
+    buffer[shift_mode * 2 + 1] |= 1;
+    buffer[2] |= segment_dot;
+
+    tm_write_data(&tm, 0, buffer, 16);
+}
+
+void shift_setup(uint32_t delta_ms) {
+
+    if (delay_held > 0) {
+        delay_held = delay_held - delta_ms;
+    } else {
+        delay_held = 0;
+
+        if (keys.held & KEY_S1) {
+            shift_time -= 1 * 60;
+            delay_held = 70;
+        } else if (keys.held & KEY_S2) {
+            shift_time += 1 * 60;
+            delay_held = 70;
+        } else if (keys.held & KEY_S3) {
+            shift_time -= 1;
+            delay_held = 70;
+        } else if (keys.held & KEY_S4) {
+            shift_time += 1;
+            delay_held = 70;
+        }
+    }
+
+    if (keys.press & KEY_S1) {
+        shift_time -= 1 * 60;
+    } else if (keys.press & KEY_S2) {
+        shift_time += 1 * 60;
+    } else if (keys.press & KEY_S3) {
+        shift_time -= 1;
+    } else if (keys.press & KEY_S4) {
+        shift_time += 1;
+    }
+
+    if (keys.release & KEY_S8) {
+        shift_mode = RUNNING;
+        shift_left = shift_time;
+        check_tick_1s = 0;
+    }
+
+    shift_time = CLAMP(shift_time, 0, 10 * 60);
+    update_display(shift_time);
+}
+
+// MARK: -
+
+static uint32_t last_ms = 0;
+
+void shift_running() {
+    if (check_tick_1s) {
+        check_tick_1s = 0;
+
+        shift_left -= 1;
+
+        if (shift_left == -1) {
+            buzz_1 = 3;
+            shift_mode = ALARM;
+            relay_on(&rel_1);
+        }
+    }
+
+    update_display(shift_left);
+}
+
+
+void shift_alarm() {
+    if (check_tick_1s) {
+        check_tick_1s = 0;
+
+        buzz_1 -= 1;
+
+        if (buzz_1 == -1) {
+            relay_off(&rel_1);
+
+            shift_left = shift_time;
+            shift_mode = RUNNING;
+        }
+    }
+
+    update_display(buzz_1);
+}
+
+void loop() {
+    uint32_t now_ms = ms_get_atomic();
+    uint32_t delta_ms = now_ms - last_ms;
+
+    if (delta_ms != 0) {
+        last_ms = now_ms;
+    }
+
+    if (check_keyboard) {
+        check_keyboard = 0;
+        keyboard_process(&keys, tm_read_keys(&tm), delta_ms);
+    }
+
+    if (check_reset && (keys.release & KEY_S5)) {
+        check_reset = 0;
+        reset();
+    } else if (keys.held & KEY_S5) {
+        check_reset = 1;
+    }
+
+    switch (shift_mode) {
+        case SETUP:
+            shift_setup(delta_ms);
+            break;
+        case RUNNING:
+            shift_running();
+            break;
+        case ALARM:
+            shift_alarm();
+            break;
+    }
 }
 
 int main() {
-    start();
+    reset();
 
-    timer1_init_1ms();
+    start();
 
     while (1) {
         loop();
-        _delay_ms(50);
-
-        uint8_t k = tm_read_keys(&tm);
-
-        uint8_t buf[16] = {0};
-
-        buf[0] = k & 0x0F;
-        buf[2] = (k >> 4) & 0x0F;
-
-        if (g_tick_1s){
-            g_tick_1s = 0;
-            left -= 1;
-
-            blink ^= 1;
-        }
-
-        struct time_hms_t time = convert_to_time(left);
-
-        buf[4]  = segment_for_int(time.h1);
-        buf[6]  = segment_for_int(time.h2);
-        buf[8]  = segment_for_int(time.m1);
-        buf[10] = segment_for_int(time.m2);
-        buf[12] = segment_for_int(time.s1);
-        buf[14] = segment_for_int(time.s2);
-        if (blink) {
-            buf[6] |= segment_dot;
-        } else {
-            buf[10] |= segment_dot;
-        }
-
-        tm_write_data(&tm, 0, buf, 16);
-
-        relay_set(&rel_1, k != 0);
     }
 }
