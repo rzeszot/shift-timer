@@ -8,7 +8,7 @@ void keyboard_init(keyboard_t *k) {
 }
 
 keyboard_t keyboard_new() {
-    keyboard_t r = {
+    keyboard_t k= {
         .current = 0,
         .previous = 0,
         .press = 0,
@@ -17,9 +17,9 @@ keyboard_t keyboard_new() {
         .time = { 0 }
     };
 
-    keyboard_init(&r);
+    keyboard_init(&k);
 
-    return r;
+    return k;
 }
 
 void keyboard_process(keyboard_t *r, uint8_t value, uint32_t delta_ms) {
@@ -48,11 +48,9 @@ void keyboard_process(keyboard_t *r, uint8_t value, uint32_t delta_ms) {
     for (uint8_t i = 0; i < 8; i++) {
         if (r->release & _BV(i)) {
             r->time[i] = 0;
-            r->held &= (uint8_t)~_BV(i);
+            r->held &= ~_BV(i);
         }
     }
-
-
 
     r->previous = r->current;
 }

@@ -17,7 +17,7 @@ void relay_set(Relay *r, uint8_t on) {
 }
 
 void relay_init(Relay *r) {
-    *(r->io.port) |= r->io.mask;
+    io_out(&r->io);
 }
 
 Relay relay_new(IO *io) {
