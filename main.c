@@ -15,15 +15,18 @@
 #define KEY_UP      (1 << PB3)
 #define KEY_ENTER   (1 << PB4)
 
+// MARK: -
+
+#define CONCAT(a, b)     a##b
+#define DDR_REG(x)       CONCAT(DDR, x)
+#define PORT_REG(x)      CONCAT(PORT, x)
+#define PIN_REG(x)       CONCAT(PIN, x)
+
+
+// MARK: -
+
 #define TM_DIO       PC0
 #define TM_CLK       PC1
-
-
-static inline void tm_delay(void) { _delay_us(20); }
-
-
-#define TM_DIO PC0
-#define TM_CLK PC1
 
 #define TM_DIO_OUT()   (DDRC |=  (1U << TM_DIO))
 #define TM_DIO_IN()    (DDRC &= ~(1U << TM_DIO))
@@ -35,83 +38,107 @@ static inline void tm_delay(void) { _delay_us(20); }
 #define TM_CLK_H()     (PORTC |=  (1U << TM_CLK))
 #define TM_CLK_L()     (PORTC &= ~(1U << TM_CLK))
 
+static inline void tm_delay() {
+    _delay_us(10);
+}
 
-volatile uint32_t timer_1ms = 0;
-volatile uint8_t tm_check = 0;
-volatile uint8_t keyboard_check = 0;
-uint8_t keyboard_press;
-uint8_t keyboard_release;
+void tm_command_start() {
+    TM_CLK_H();
+    TM_DIO_H();
 
-uint8_t segments[6];
+    tm_delay();
 
-typedef enum {
-    NONE,
-    HIGH,
-    LOW
-} tm_state_t;
+    TM_DIO_L();
 
-typedef struct {
-    tm_state_t clk;
-    tm_state_t dio;
-} tm_io_t;
+    tm_delay();
 
-void tmb_push(tm_io_t io) {
-    switch (io.clk) {
-        case NONE:
-            break;
-        case HIGH:
-            TM_CLK_H();
-            break;
-        case LOW:
-            TM_CLK_L();
-            break;
-    }
-
-    switch (io.dio) {
-        case NONE:
-            break;
-        case HIGH:
-            TM_DIO_H();
-            break;
-        case LOW:
-            TM_DIO_L();
-            break;
-    }
+    TM_CLK_L();
 
     tm_delay();
 }
 
-void tmb_push_start(tm_buffer_t *buffer) {
-    tmb_push(buffer, (tm_io_t){ .clk = HIGH, .dio = HIGH });
-    tmb_push(buffer, (tm_io_t){ .clk = HIGH, .dio =  LOW });
-    tmb_push(buffer, (tm_io_t){ .clk =  LOW, .dio =  LOW });
+void tm_command_stop() {
+    TM_CLK_L();
+    TM_DIO_L();
+
+    tm_delay();
+
+    TM_CLK_H();
+
+    tm_delay();
+
+    TM_DIO_H();
+
+    tm_delay();
 }
 
-void tmb_push_stop(tm_buffer_t *buffer) {
-    tmb_push(buffer, (tm_io_t){ .clk =  LOW, .dio =  LOW });
-    tmb_push(buffer, (tm_io_t){ .clk = HIGH, .dio =  LOW });
-    tmb_push(buffer, (tm_io_t){ .clk = HIGH, .dio = HIGH });
-}
-
-void tmb_write_byte(tm_buffer_t *buffer, uint8_t b) {
+void tm_command_write(uint8_t b) {
     for (uint8_t i = 0; i < 8; i++) {
-        tmb_push(buffer, (tm_io_t){ .clk =  LOW, .dio = NONE });
+        TM_CLK_L();
+
+        tm_delay();
 
         if (b & 1) {
-            tmb_push(buffer, (tm_io_t){ .clk = NONE, .dio = HIGH });
+            TM_DIO_H();
         } else {
-            tmb_push(buffer, (tm_io_t){ .clk = NONE, .dio = LOW });
+            TM_DIO_L();
         }
 
-        tmb_push(buffer, (tm_io_t){ .clk = HIGH, .dio = NONE });
+        tm_delay();
+
+        TM_CLK_H();
+
+        tm_delay();
 
         b >>= 1;
     }
 
-    tmb_push(buffer, (tm_io_t){ .clk =  LOW, .dio =  LOW });
-    tmb_push(buffer, (tm_io_t){ .clk = HIGH, .dio =  LOW });
-    tmb_push(buffer, (tm_io_t){ .clk =  LOW, .dio =  LOW });
+    TM_CLK_L();
+    TM_DIO_L();
+
+    tm_delay();
+
+    TM_CLK_H();
+
+    tm_delay();
+
+    TM_CLK_L();
+
+    tm_delay();
 }
+
+// MARK: -
+
+uint8_t segments[6];
+
+void segments_init() {
+    TM_DIO_OUT();
+    TM_DIO_H();
+
+    TM_CLK_OUT();
+    TM_CLK_H();
+
+    tm_command_start();
+    tm_command_write(0x80 | 0x08 | 0x07);
+    tm_command_stop();
+}
+
+void segments_update() {
+    static uint8_t map[] = { 2, 1, 0, 5, 4, 3 };
+
+    tm_command_start();
+    tm_command_write(0x40);
+    tm_command_stop();
+
+    tm_command_start();
+    tm_command_write(0xC0);
+    for (uint8_t i = 0; i < 6; i++) {
+        tm_command_write(segments[map[i]]);
+    }
+    tm_command_stop();
+}
+
+// MARK: -
 
 void buzz_set(uint8_t enabled) {
     DDRC |= (1 << PC5);
@@ -123,24 +150,24 @@ void buzz_set(uint8_t enabled) {
     }
 }
 
-void led_set(uint8_t enabled) {
-    DDRB |= (1 << PB5);
 
-    if (enabled) {
-        PORTB |= (1 << PB5);
-    } else {
-        PORTB &= ~(1 << PB5);
-    }
-}
+// MARK: -
+
+
+
+
+volatile uint32_t timer_1ms = 0;
+volatile uint8_t keyboard_check = 0;
+uint8_t keyboard_press;
+uint8_t keyboard_release;
+
+
+
+
 
 ISR(TIMER1_COMPA_vect) {
     timer_1ms += 1;
-
     keyboard_check = 1;
-
-    if (timer_1ms % 20 == 0) {
-        tm_check = 1;
-    }
 }
 
 void keyboard_step() {
@@ -179,12 +206,17 @@ void keyboard_step() {
     previous = current;
 }
 
-
 uint8_t aaa = 0;
 
-void tm_step() {
 
 
+
+void reset() {
+    buzz_set(0);
+
+    for (uint8_t i=0; i<6; i++) {
+        segments[i] = 0;
+    }
 }
 
 void start() {
@@ -202,46 +234,9 @@ void start() {
 
     sei();
 
-    TM_DIO_OUT();
-    TM_DIO_H();
-
-    TM_CLK_OUT();
-    TM_CLK_H();
-
-    led_set(0);
-    buzz_set(0);
-
-    for(uint8_t i=0; i<6; i++) {
-        segments[i] = i;
-    }
-
-    tmb_init(&buffer);
-
-    tmb_push_start(&buffer);
-    tmb_write_byte(&buffer, 0x80 | 0x08 | 0x07);
-    tmb_push_stop(&buffer);
-
-    const uint8_t digits[] = {
-        0x4F,  // 3
-        0,  // 2
-        segment_for_int(aaa),  // 1
-        0x7d,  // 6
-        0x6d,  // 5
-        0x66   // 4
-    };
-
-    tmb_push_start(&buffer);
-    tmb_write_byte(&buffer, 0x40);
-    tmb_push_stop(&buffer);
-
-    tmb_push_start(&buffer);
-    tmb_write_byte(&buffer, 0xC0);
-    for (uint8_t i = 0; i < 6; i++) {
-        tmb_write_byte(&buffer, digits[i]);
-    }
-    tmb_push_stop(&buffer);
+    segments_init();
+    segments_update();
 }
-
 
 void loop() {
     if (keyboard_check) {
@@ -250,47 +245,22 @@ void loop() {
 
         uint8_t qqq = aaa;
 
-        if (keyboard_press & KEY_ESCAPE) {
+        if (keyboard_press & KEY_DOWN) {
             aaa -= 1;
         }
-        if (keyboard_release & KEY_BACK) {
+        if (keyboard_release & KEY_UP) {
             aaa += 1;
         }
 
         if (aaa != qqq) {
-
-            const uint8_t digits[] = {
-                0x4F,  // 3
-                0,  // 2
-                segment_for_int(aaa),  // 1
-                0x7d,  // 6
-                0x6d,  // 5
-                0x66   // 4
-            };
-
-            tmb_push_start(&buffer);
-            tmb_write_byte(&buffer, 0x40);
-            tmb_push_stop(&buffer);
-
-            tmb_push_start(&buffer);
-            tmb_write_byte(&buffer, 0xC0);
-            for (uint8_t i = 0; i < 6; i++) {
-                tmb_write_byte(&buffer, digits[i]);
-            }
-            tmb_push_stop(&buffer);
+            segments[5] = segment_for_int(aaa);
+            segments_update();
         }
     }
-
-    if (tm_check) {
-        tm_check = 0;
-        tm_step();
-    }
-
-//    buzz_set(aaa);
-//    led_set(bbb);
 }
 
 int main() {
+    reset();
     start();
 
     while (1) {
