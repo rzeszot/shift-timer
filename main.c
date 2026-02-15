@@ -13,6 +13,7 @@
 #define KEY_ENTER   (1 << PB4)
 
 volatile uint32_t timer_1ms = 0;
+volatile uint8_t tm_check = 0;
 volatile uint8_t keyboard_check = 0;
 uint8_t keyboard_press;
 uint8_t keyboard_release;
@@ -41,10 +42,15 @@ void led_set(uint8_t enabled) {
 
 ISR(TIMER1_COMPA_vect) {
     timer_1ms += 1;
+
     keyboard_check = 1;
+
+    if (timer_1ms % 20 == 0) {
+        tm_check = 1;
+    }
 }
 
-void keyboard_debounce() {
+void keyboard_step() {
     static uint8_t stable = 0x00;
     static uint8_t age[5] = { 0 };
 
@@ -80,6 +86,10 @@ void keyboard_debounce() {
     previous = current;
 }
 
+void tm_step() {
+
+}
+
 void start() {
     DDRB &= ~((1 << PB0) | (1 << PB1) | (1 << PB2) | (1 << PB3) | (1 << PB4));
     PORTB |= (1 << PB0) | (1 << PB1) | (1 << PB2) | (1 << PB3) | (1 << PB4);
@@ -109,16 +119,19 @@ uint8_t bbb = 0;
 void loop() {
     if (keyboard_check) {
         keyboard_check = 0;
+        keyboard_step();
+    }
+    if (tm_check) {
+        tm_check = 0;
+        tm_step();
+    }
 
-        keyboard_debounce();
+    if (keyboard_press & KEY_ESCAPE) {
+        aaa = !aaa;
+    }
 
-        if (keyboard_press & KEY_ESCAPE) {
-            aaa = !aaa;
-        }
-
-        if (keyboard_release & KEY_BACK) {
-            bbb = !bbb;
-        }
+    if (keyboard_release & KEY_BACK) {
+        bbb = !bbb;
     }
 
     buzz_set(aaa);
