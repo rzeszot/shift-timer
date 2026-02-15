@@ -19,6 +19,7 @@
 #define TM_CLK       PC1
 
 
+static inline void tm_delay(void) { _delay_us(20); }
 
 
 #define TM_DIO PC0
@@ -43,8 +44,6 @@ uint8_t keyboard_release;
 
 uint8_t segments[6];
 
-#define TMB_SIZE 256
-
 typedef enum {
     NONE,
     HIGH,
@@ -56,52 +55,30 @@ typedef struct {
     tm_state_t dio;
 } tm_io_t;
 
-typedef struct {
-    tm_io_t buffer[TMB_SIZE];
-    uint8_t head;
-    uint8_t tail;
-    uint8_t count;
-} tm_buffer_t;
-
-
-tm_buffer_t buffer;
-
-void tmb_init(tm_buffer_t *b) {
-    b->head = 0;
-    b->tail = 0;
-    b->count = 0;
-}
-
-
-
-bool tmb_is_empty(tm_buffer_t *b) {
-    return b->head == b->tail;
-}
-
-bool tmb_pop(tm_buffer_t *b, tm_io_t *data) {
-    if (tmb_is_empty(b)) {
-        return false;
+void tmb_push(tm_io_t io) {
+    switch (io.clk) {
+        case NONE:
+            break;
+        case HIGH:
+            TM_CLK_H();
+            break;
+        case LOW:
+            TM_CLK_L();
+            break;
     }
 
-    *data = b->buffer[b->tail];
-    b->tail = (b->tail + 1) % TMB_SIZE;
-    b->count -= 1;
-
-    return true;
-}
-
-bool tmb_push(tm_buffer_t *b, tm_io_t data) {
-    uint8_t next = (b->head + 1) % TMB_SIZE;
-
-    if (next == b->tail) {
-        return false;
+    switch (io.dio) {
+        case NONE:
+            break;
+        case HIGH:
+            TM_DIO_H();
+            break;
+        case LOW:
+            TM_DIO_L();
+            break;
     }
 
-
-    b->buffer[b->head] = data;
-    b->head = next;
-    b->count += 1;
-    return true;
+    tm_delay();
 }
 
 void tmb_push_start(tm_buffer_t *buffer) {
@@ -160,7 +137,10 @@ ISR(TIMER1_COMPA_vect) {
     timer_1ms += 1;
 
     keyboard_check = 1;
-    tm_check = 1;
+
+    if (timer_1ms % 20 == 0) {
+        tm_check = 1;
+    }
 }
 
 void keyboard_step() {
@@ -203,51 +183,9 @@ void keyboard_step() {
 uint8_t aaa = 0;
 
 void tm_step() {
-    tm_io_t data;
 
-    if (!tmb_pop(&buffer, &data)) {
-        return;
-    }
 
-    switch (data.clk) {
-        case NONE:
-            break;
-        case HIGH:
-            TM_CLK_H();
-            break;
-        case LOW:
-            TM_CLK_L();
-            break;
-    }
-
-    switch (data.dio) {
-        case NONE:
-            break;
-        case HIGH:
-            TM_DIO_H();
-            break;
-        case LOW:
-            TM_DIO_L();
-            break;
-    }
 }
-
-
-void segments_update() {
-    static uint8_t map[] = { 2, 1, 0, 5, 4, 3 };
-
-    tmb_push_start(&buffer);
-    tmb_write_byte(&buffer, 0x40);
-    tmb_push_stop(&buffer);
-
-    tmb_push_start(&buffer);
-    tmb_write_byte(&buffer, 0xC0);
-    for (uint8_t i = 0; i < 6; i++) {
-        tmb_write_byte(&buffer, segments[map[i]]);
-    }
-    tmb_push_stop(&buffer);
-}
-
 
 void start() {
     DDRB &= ~((1 << PB0) | (1 << PB1) | (1 << PB2) | (1 << PB3) | (1 << PB4));
@@ -274,7 +212,7 @@ void start() {
     buzz_set(0);
 
     for(uint8_t i=0; i<6; i++) {
-        segments[i] = 0;
+        segments[i] = i;
     }
 
     tmb_init(&buffer);
@@ -283,24 +221,63 @@ void start() {
     tmb_write_byte(&buffer, 0x80 | 0x08 | 0x07);
     tmb_push_stop(&buffer);
 
-    segments_update();
+    const uint8_t digits[] = {
+        0x4F,  // 3
+        0,  // 2
+        segment_for_int(aaa),  // 1
+        0x7d,  // 6
+        0x6d,  // 5
+        0x66   // 4
+    };
+
+    tmb_push_start(&buffer);
+    tmb_write_byte(&buffer, 0x40);
+    tmb_push_stop(&buffer);
+
+    tmb_push_start(&buffer);
+    tmb_write_byte(&buffer, 0xC0);
+    for (uint8_t i = 0; i < 6; i++) {
+        tmb_write_byte(&buffer, digits[i]);
+    }
+    tmb_push_stop(&buffer);
 }
+
 
 void loop() {
     if (keyboard_check) {
         keyboard_check = 0;
         keyboard_step();
 
+        uint8_t qqq = aaa;
 
-        if (keyboard_press & KEY_DOWN) {
+        if (keyboard_press & KEY_ESCAPE) {
             aaa -= 1;
-            segments[5] = segment_for_int(aaa);
-            segments_update();
         }
-        if (keyboard_press & KEY_UP) {
+        if (keyboard_release & KEY_BACK) {
             aaa += 1;
-            segments[5] = segment_for_int(aaa);
-            segments_update();
+        }
+
+        if (aaa != qqq) {
+
+            const uint8_t digits[] = {
+                0x4F,  // 3
+                0,  // 2
+                segment_for_int(aaa),  // 1
+                0x7d,  // 6
+                0x6d,  // 5
+                0x66   // 4
+            };
+
+            tmb_push_start(&buffer);
+            tmb_write_byte(&buffer, 0x40);
+            tmb_push_stop(&buffer);
+
+            tmb_push_start(&buffer);
+            tmb_write_byte(&buffer, 0xC0);
+            for (uint8_t i = 0; i < 6; i++) {
+                tmb_write_byte(&buffer, digits[i]);
+            }
+            tmb_push_stop(&buffer);
         }
     }
 
