@@ -93,7 +93,7 @@ void tmb_push_stop() {
     tmb_push((tm_io_t){ .clk = HIGH, .dio = HIGH });
 }
 
-void tm_write_byte(uint8_t b) {
+void tmb_write_byte(uint8_t b) {
     for (uint8_t i = 0; i < 8; i++) {
         tmb_push((tm_io_t){ .clk =  LOW, .dio = NONE });
 
@@ -216,7 +216,7 @@ void start() {
     }
 
     tmb_push_start();
-    tm_write_byte(0x80 | 0x08 | 0x07);
+    tmb_write_byte(0x80 | 0x08 | 0x07);
     tmb_push_stop();
 
     const uint8_t digits[] = {
@@ -229,13 +229,13 @@ void start() {
     };
 
     tmb_push_start();
-    tm_write_byte(0x40);
+    tmb_write_byte(0x40);
     tmb_push_stop();
 
     tmb_push_start();
-    tm_write_byte(0xC0);
+    tmb_write_byte(0xC0);
     for (uint8_t i = 0; i < 6; i++) {
-        tm_write_byte(digits[i]);
+        tmb_write_byte(digits[i]);
     }
     tmb_push_stop();
 }
@@ -267,13 +267,13 @@ void loop() {
             };
 
             tmb_push_start();
-            tm_write_byte(0x40);
+            tmb_write_byte(0x40);
             tmb_push_stop();
 
             tmb_push_start();
-            tm_write_byte(0xC0);
+            tmb_write_byte(0xC0);
             for (uint8_t i = 0; i < 6; i++) {
-                tm_write_byte(digits[i]);
+                tmb_write_byte(digits[i]);
             }
             tmb_push_stop();
         }
