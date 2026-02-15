@@ -184,25 +184,7 @@ uint8_t aaa = 0;
 
 void tm_step() {
 
-    const uint8_t digits[] = {
-        0x4F,  // 3
-        0,  // 2
-        segment_for_int(aaa),  // 1
-        0x7d,  // 6
-        0x6d,  // 5
-        0x66   // 4
-    };
 
-    tmb_push_start();
-    tm_write_byte(0x40);
-    tmb_push_stop();
-
-    tmb_push_start();
-    tm_write_byte(0xC0);
-    for (uint8_t i = 0; i < 6; i++) {
-        tm_write_byte(digits[i]);
-    }
-    tmb_push_stop();
 }
 
 void start() {
@@ -236,6 +218,26 @@ void start() {
     tmb_push_start();
     tm_write_byte(0x80 | 0x08 | 0x07);
     tmb_push_stop();
+
+    const uint8_t digits[] = {
+        0x4F,  // 3
+        0,  // 2
+        segment_for_int(aaa),  // 1
+        0x7d,  // 6
+        0x6d,  // 5
+        0x66   // 4
+    };
+
+    tmb_push_start();
+    tm_write_byte(0x40);
+    tmb_push_stop();
+
+    tmb_push_start();
+    tm_write_byte(0xC0);
+    for (uint8_t i = 0; i < 6; i++) {
+        tm_write_byte(digits[i]);
+    }
+    tmb_push_stop();
 }
 
 
@@ -244,11 +246,36 @@ void loop() {
         keyboard_check = 0;
         keyboard_step();
 
+        uint8_t qqq = aaa;
+
         if (keyboard_press & KEY_ESCAPE) {
             aaa -= 1;
         }
         if (keyboard_release & KEY_BACK) {
             aaa += 1;
+        }
+
+        if (aaa != qqq) {
+
+            const uint8_t digits[] = {
+                0x4F,  // 3
+                0,  // 2
+                segment_for_int(aaa),  // 1
+                0x7d,  // 6
+                0x6d,  // 5
+                0x66   // 4
+            };
+
+            tmb_push_start();
+            tm_write_byte(0x40);
+            tmb_push_stop();
+
+            tmb_push_start();
+            tm_write_byte(0xC0);
+            for (uint8_t i = 0; i < 6; i++) {
+                tm_write_byte(digits[i]);
+            }
+            tmb_push_stop();
         }
     }
 
