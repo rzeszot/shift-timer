@@ -81,36 +81,36 @@ void tmb_push(tm_io_t io) {
     tm_delay();
 }
 
-void tmb_push_start() {
-    tmb_push((tm_io_t){ .clk = HIGH, .dio = HIGH });
-    tmb_push((tm_io_t){ .clk = HIGH, .dio =  LOW });
-    tmb_push((tm_io_t){ .clk =  LOW, .dio =  LOW });
+void tmb_push_start(tm_buffer_t *buffer) {
+    tmb_push(buffer, (tm_io_t){ .clk = HIGH, .dio = HIGH });
+    tmb_push(buffer, (tm_io_t){ .clk = HIGH, .dio =  LOW });
+    tmb_push(buffer, (tm_io_t){ .clk =  LOW, .dio =  LOW });
 }
 
-void tmb_push_stop() {
-    tmb_push((tm_io_t){ .clk =  LOW, .dio =  LOW });
-    tmb_push((tm_io_t){ .clk = HIGH, .dio =  LOW });
-    tmb_push((tm_io_t){ .clk = HIGH, .dio = HIGH });
+void tmb_push_stop(tm_buffer_t *buffer) {
+    tmb_push(buffer, (tm_io_t){ .clk =  LOW, .dio =  LOW });
+    tmb_push(buffer, (tm_io_t){ .clk = HIGH, .dio =  LOW });
+    tmb_push(buffer, (tm_io_t){ .clk = HIGH, .dio = HIGH });
 }
 
-void tmb_write_byte(uint8_t b) {
+void tmb_write_byte(tm_buffer_t *buffer, uint8_t b) {
     for (uint8_t i = 0; i < 8; i++) {
-        tmb_push((tm_io_t){ .clk =  LOW, .dio = NONE });
+        tmb_push(buffer, (tm_io_t){ .clk =  LOW, .dio = NONE });
 
         if (b & 1) {
-            tmb_push((tm_io_t){ .clk = NONE, .dio = HIGH });
+            tmb_push(buffer, (tm_io_t){ .clk = NONE, .dio = HIGH });
         } else {
-            tmb_push((tm_io_t){ .clk = NONE, .dio = LOW });
+            tmb_push(buffer, (tm_io_t){ .clk = NONE, .dio = LOW });
         }
 
-        tmb_push((tm_io_t){ .clk = HIGH, .dio = NONE });
+        tmb_push(buffer, (tm_io_t){ .clk = HIGH, .dio = NONE });
 
         b >>= 1;
     }
 
-    tmb_push((tm_io_t){ .clk =  LOW, .dio =  LOW });
-    tmb_push((tm_io_t){ .clk = HIGH, .dio =  LOW });
-    tmb_push((tm_io_t){ .clk =  LOW, .dio =  LOW });
+    tmb_push(buffer, (tm_io_t){ .clk =  LOW, .dio =  LOW });
+    tmb_push(buffer, (tm_io_t){ .clk = HIGH, .dio =  LOW });
+    tmb_push(buffer, (tm_io_t){ .clk =  LOW, .dio =  LOW });
 }
 
 void buzz_set(uint8_t enabled) {
@@ -215,9 +215,11 @@ void start() {
         segments[i] = i;
     }
 
-    tmb_push_start();
-    tmb_write_byte(0x80 | 0x08 | 0x07);
-    tmb_push_stop();
+    tmb_init(&buffer);
+
+    tmb_push_start(&buffer);
+    tmb_write_byte(&buffer, 0x80 | 0x08 | 0x07);
+    tmb_push_stop(&buffer);
 
     const uint8_t digits[] = {
         0x4F,  // 3
@@ -228,16 +230,16 @@ void start() {
         0x66   // 4
     };
 
-    tmb_push_start();
-    tmb_write_byte(0x40);
-    tmb_push_stop();
+    tmb_push_start(&buffer);
+    tmb_write_byte(&buffer, 0x40);
+    tmb_push_stop(&buffer);
 
-    tmb_push_start();
-    tmb_write_byte(0xC0);
+    tmb_push_start(&buffer);
+    tmb_write_byte(&buffer, 0xC0);
     for (uint8_t i = 0; i < 6; i++) {
-        tmb_write_byte(digits[i]);
+        tmb_write_byte(&buffer, digits[i]);
     }
-    tmb_push_stop();
+    tmb_push_stop(&buffer);
 }
 
 
@@ -266,16 +268,16 @@ void loop() {
                 0x66   // 4
             };
 
-            tmb_push_start();
-            tmb_write_byte(0x40);
-            tmb_push_stop();
+            tmb_push_start(&buffer);
+            tmb_write_byte(&buffer, 0x40);
+            tmb_push_stop(&buffer);
 
-            tmb_push_start();
-            tmb_write_byte(0xC0);
+            tmb_push_start(&buffer);
+            tmb_write_byte(&buffer, 0xC0);
             for (uint8_t i = 0; i < 6; i++) {
-                tmb_write_byte(digits[i]);
+                tmb_write_byte(&buffer, digits[i]);
             }
-            tmb_push_stop();
+            tmb_push_stop(&buffer);
         }
     }
 
