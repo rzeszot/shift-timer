@@ -63,7 +63,7 @@ void tmb_push(tm_io_t io) {
             TM_CLK_H();
             break;
         case LOW:
-            TM_DIO_H();
+            TM_CLK_L();
             break;
     }
 
@@ -94,42 +94,23 @@ void tmb_push_stop() {
 }
 
 void tm_write_byte(uint8_t b) {
-    for (uint8_t i = 0; i < 8; i++)
-    {
-        TM_CLK_L();
-
-        tm_delay();
-
+    for (uint8_t i = 0; i < 8; i++) {
+        tmb_push((tm_io_t){ .clk =  LOW, .dio = NONE });
 
         if (b & 1) {
-            TM_DIO_H();
+            tmb_push((tm_io_t){ .clk = NONE, .dio = HIGH });
         } else {
-            TM_DIO_L();
+            tmb_push((tm_io_t){ .clk = NONE, .dio = LOW });
         }
 
-        tm_delay();
-
-        TM_CLK_H();
-
-        tm_delay();
+        tmb_push((tm_io_t){ .clk = HIGH, .dio = NONE });
 
         b >>= 1;
     }
 
-    TM_CLK_L();
-    TM_DIO_L();
-
-    tm_delay();
-
-    TM_CLK_H();
-    TM_DIO_L();
-
-    tm_delay();
-
-    TM_CLK_L();
-    TM_DIO_L();
-
-    tm_delay();
+    tmb_push((tm_io_t){ .clk =  LOW, .dio =  LOW });
+    tmb_push((tm_io_t){ .clk = HIGH, .dio =  LOW });
+    tmb_push((tm_io_t){ .clk =  LOW, .dio =  LOW });
 }
 
 void buzz_set(uint8_t enabled) {
