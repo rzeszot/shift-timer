@@ -6,8 +6,6 @@
 #include <util/delay.h>
 #include "segments.h"
 
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
-
 #define KEY_DEBOUNCE_MS   20
 #define KEY_LONG_PRESS_MS 500
 
@@ -21,26 +19,6 @@
 #define TM_CLK       PC1
 
 
-
-void buzz_set(uint8_t enabled) {
-    DDRC |= (1 << PC5);
-
-    if (enabled) {
-        PORTC &= ~(1 << PC5);
-    } else {
-        PORTC |= (1 << PC5);
-    }
-}
-
-void led_set(uint8_t enabled) {
-    DDRB |= (1 << PB5);
-
-    if (enabled) {
-        PORTB |= (1 << PB5);
-    } else {
-        PORTB &= ~(1 << PB5);
-    }
-}
 
 
 #define TM_DIO PC0
@@ -57,7 +35,6 @@ void led_set(uint8_t enabled) {
 #define TM_CLK_L()     (PORTC &= ~(1U << TM_CLK))
 
 
-volatile uint32_t timer_20us = 0;
 volatile uint32_t timer_1ms = 0;
 volatile uint8_t tm_check = 0;
 volatile uint8_t keyboard_check = 0;
@@ -66,7 +43,7 @@ uint8_t keyboard_release;
 
 uint8_t segments[6];
 
-#define TMB_SIZE 400
+#define TMB_SIZE 256
 
 typedef enum {
     NONE,
@@ -79,55 +56,11 @@ typedef struct {
     tm_state_t dio;
 } tm_io_t;
 
-const tm_io_t tm_command_start[] = {
-    { .clk = HIGH, .dio = HIGH },
-    { .clk = HIGH, .dio =  LOW },
-    { .clk =  LOW, .dio =  LOW }
-};
-
-const tm_io_t tm_command_stop[] = {
-    { .clk =  LOW, .dio =  LOW },
-    { .clk = HIGH, .dio =  LOW },
-    { .clk = HIGH, .dio = HIGH }
-};
-
-const tm_io_t tm_command_write_end[] = {
-    { .clk =  LOW, .dio =  LOW },
-    { .clk = HIGH, .dio =  LOW },
-    { .clk =  LOW, .dio =  LOW }
-};
-
-
-    for (uint8_t i = 0; i < 8; i++) {
-        tmb_push(buffer, (tm_io_t){ .clk =  LOW, .dio = NONE });
-
-        if (b & 1) {
-            tmb_push(buffer, (tm_io_t){ .clk = NONE, .dio = HIGH });
-        } else {
-            tmb_push(buffer, (tm_io_t){ .clk = NONE, .dio = LOW });
-        }
-
-        tmb_push(buffer, (tm_io_t){ .clk = HIGH, .dio = NONE });
-
-        b >>= 1;
-    }
-
-
-};
-
-
-//tmb_push_start(&buffer);
-//tmb_write_byte(&buffer, 0x80 | 0x08 | 0x07);
-//tmb_push_stop(&buffer);
-
-
-
-
 typedef struct {
     tm_io_t buffer[TMB_SIZE];
     uint8_t head;
     uint8_t tail;
-    uint16_t count;
+    uint8_t count;
 } tm_buffer_t;
 
 
@@ -139,7 +72,6 @@ void tmb_init(tm_buffer_t *b) {
     b->count = 0;
 }
 
-uint16_t buffer_max = 0;
 
 
 bool tmb_is_empty(tm_buffer_t *b) {
@@ -155,8 +87,6 @@ bool tmb_pop(tm_buffer_t *b, tm_io_t *data) {
     b->tail = (b->tail + 1) % TMB_SIZE;
     b->count -= 1;
 
-    buffer_max = MAX(b->count, buffer_max);
-
     return true;
 }
 
@@ -164,7 +94,6 @@ bool tmb_push(tm_buffer_t *b, tm_io_t data) {
     uint8_t next = (b->head + 1) % TMB_SIZE;
 
     if (next == b->tail) {
-        led_set(1);
         return false;
     }
 
@@ -207,15 +136,30 @@ void tmb_write_byte(tm_buffer_t *buffer, uint8_t b) {
     tmb_push(buffer, (tm_io_t){ .clk =  LOW, .dio =  LOW });
 }
 
-ISR(TIMER1_COMPA_vect) {
-    timer_20us += 1;
+void buzz_set(uint8_t enabled) {
+    DDRC |= (1 << PC5);
 
-    if (timer_20us >= 50) {
-        timer_1ms += 1;
-        timer_20us = 0;
-        keyboard_check = 1;
+    if (enabled) {
+        PORTC &= ~(1 << PC5);
+    } else {
+        PORTC |= (1 << PC5);
     }
+}
 
+void led_set(uint8_t enabled) {
+    DDRB |= (1 << PB5);
+
+    if (enabled) {
+        PORTB |= (1 << PB5);
+    } else {
+        PORTB &= ~(1 << PB5);
+    }
+}
+
+ISR(TIMER1_COMPA_vect) {
+    timer_1ms += 1;
+
+    keyboard_check = 1;
     tm_check = 1;
 }
 
@@ -314,8 +258,8 @@ void start() {
     TCCR1A = 0;
     TCCR1B = 0;
     TCCR1B |= (1 << WGM12);
-    TCCR1B |= (1 << CS11); // prescaler 8
-    OCR1A = 39;            // 20us at 16MHz/8
+    TCCR1B |= (1 << CS11) | (1 << CS10);
+    OCR1A = 249;
     TIMSK1 |= (1 << OCIE1A);
 
     sei();
@@ -356,16 +300,6 @@ void loop() {
         if (keyboard_press & KEY_UP) {
             aaa += 1;
             segments[5] = segment_for_int(aaa);
-            segments_update();
-        }
-        if (keyboard_press & KEY_BACK) {
-            led_set(0);
-
-            segments[0] = segment_for_int(buffer_max / 1000 % 10);
-            segments[1] = segment_for_int(buffer_max / 100 % 10);
-            segments[2] = segment_for_int(buffer_max / 10 % 10);
-            segments[3] = segment_for_int(buffer_max / 1 % 10);
-            buffer_max = 0;
             segments_update();
         }
     }
