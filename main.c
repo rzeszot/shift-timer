@@ -3,7 +3,8 @@
 #include <avr/eeprom.h>
 #include <stdint.h>
 
-#define DEBOUNCE_MS 20
+#define KEY_DEBOUNCE_MS   20
+#define KEY_LONG_PRESS_MS 500
 
 #define KEY_ESCAPE  (1 << PB0)
 #define KEY_BACK    (1 << PB1)
@@ -11,25 +12,44 @@
 #define KEY_UP      (1 << PB3)
 #define KEY_ENTER   (1 << PB4)
 
-#define KEY_MASK    (KEY_ESCAPE | KEY_BACK | KEY_DOWN | KEY_UP | KEY_ENTER)
-
 volatile uint32_t timer_1ms = 0;
-
-volatile uint8_t check_keyboard = 0;
-
-uint8_t keyboard_current = 0xff;
-uint8_t keyboard_previous = 0x00;
+volatile uint8_t keyboard_check = 0;
 uint8_t keyboard_press;
 uint8_t keyboard_release;
 
-ISR(TIMER1_COMPA_vect) {
-    timer_1ms += 1;
-    check_keyboard = 1;
+uint8_t segments[6];
+
+void buzz_set(uint8_t enabled) {
+    DDRC |= (1 << PC5);
+
+    if (enabled) {
+        PORTC &= ~(1 << PC5);
+    } else {
+        PORTC |= (1 << PC5);
+    }
 }
 
-void step_keyboard() {
-    static uint8_t stable = 0xFF;
+void led_set(uint8_t enabled) {
+    DDRB |= (1 << PB5);
+
+    if (enabled) {
+        PORTB |= (1 << PB5);
+    } else {
+        PORTB &= ~(1 << PB5);
+    }
+}
+
+ISR(TIMER1_COMPA_vect) {
+    timer_1ms += 1;
+    keyboard_check = 1;
+}
+
+void keyboard_debounce() {
+    static uint8_t stable = 0x00;
     static uint8_t age[5] = { 0 };
+
+    static uint8_t current = 0x00;
+    static uint8_t previous = 0x00;
 
     uint8_t raw = PINB;
 
@@ -40,7 +60,7 @@ void step_keyboard() {
         if ((stable & mask) == raw_bit) {
             age[i] = 0;
         } else {
-            if (++age[i] >= DEBOUNCE_MS) {
+            if (++age[i] >= KEY_DEBOUNCE_MS) {
                 age[i] = 0;
 
                 if (raw_bit) {
@@ -49,30 +69,22 @@ void step_keyboard() {
                     stable &= ~mask;
                 }
 
-                keyboard_current = stable;
+                current = stable ^ 0b00011111;
             }
         }
     }
 
-    keyboard_press   =  keyboard_current & ~keyboard_previous;
-    keyboard_release = ~keyboard_current &  keyboard_previous;
+    keyboard_press   =  current & ~previous;
+    keyboard_release = ~current &  previous;
 
-    keyboard_previous = keyboard_current;
+    previous = current;
 }
-
-void reset() {
-
-}
-
-uint8_t aaa = 0;
-
 
 void start() {
-    DDRB |= (1 << PB5);
+    DDRB &= ~((1 << PB0) | (1 << PB1) | (1 << PB2) | (1 << PB3) | (1 << PB4));
+    PORTB |= (1 << PB0) | (1 << PB1) | (1 << PB2) | (1 << PB3) | (1 << PB4);
 
-
-    DDRB &= ~KEY_MASK;
-    PORTB |= KEY_MASK;
+    PORTC |= (1 << PC5);
 
     TCCR1A = 0;
     TCCR1B = 0;
@@ -82,27 +94,38 @@ void start() {
     TIMSK1 |= (1 << OCIE1A);
 
     sei();
+
+    led_set(0);
+    buzz_set(0);
+
+    for(uint8_t i=0; i<6; i++) {
+        segments[i] = i;
+    }
 }
 
+uint8_t aaa = 0;
+uint8_t bbb = 0;
+
 void loop() {
-    if (check_keyboard) {
-        check_keyboard = 0;
-        step_keyboard();
+    if (keyboard_check) {
+        keyboard_check = 0;
+
+        keyboard_debounce();
 
         if (keyboard_press & KEY_ESCAPE) {
             aaa = !aaa;
         }
+
+        if (keyboard_release & KEY_BACK) {
+            bbb = !bbb;
+        }
     }
 
-    if (aaa) {
-        PORTB |= (1 << PB5);
-    } else {
-        PORTB &= ~(1 << PB5);
-    }
+    buzz_set(aaa);
+    led_set(bbb);
 }
 
 int main() {
-    reset();
     start();
 
     while (1) {
