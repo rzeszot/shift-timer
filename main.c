@@ -2,7 +2,9 @@
 #include <avr/io.h>
 #include <avr/eeprom.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <util/delay.h>
+#include "segments.h"
 
 #define KEY_DEBOUNCE_MS   20
 #define KEY_LONG_PRESS_MS 500
@@ -24,7 +26,101 @@ uint8_t keyboard_release;
 
 uint8_t segments[6];
 
+typedef enum {
+    NONE,
+    HIGH,
+    LOW
+} tm_state_t;
 
+typedef struct {
+    tm_state_t clk;
+    tm_state_t dio;
+} tm_io_t;
+
+#define TMB_SIZE 64
+
+typedef struct {
+    tm_io_t buffer[TMB_SIZE];
+    uint8_t head;
+    uint8_t tail;
+} tm_buffer_t;
+
+
+tm_buffer_t buffer;
+
+void tmb_init(tm_buffer_t *b) {
+    b->head = 0;
+    b->tail = 0;
+}
+
+bool tmb_push(tm_buffer_t *b, tm_io_t data) {
+    uint8_t next = (b->head + 1) % TMB_SIZE;
+
+    if (next == b->tail) {
+        return false;
+    }
+
+    b->buffer[b->head] = data;
+    b->head = next;
+    return true;
+}
+
+bool tmb_is_empty(tm_buffer_t *b) {
+    return b->head == b->tail;
+}
+
+bool tmb_pop(tm_buffer_t *b, tm_io_t *data) {
+    if (tmb_is_empty(b)) {
+        return false;
+    }
+
+    *data = b->buffer[b->tail];
+    b->tail = (b->tail + 1) % TMB_SIZE;
+
+    return true;
+}
+
+void tmb_push_start(tm_buffer_t *b) {
+    tmb_push(b, (tm_io_t){ .clk = HIGH, .dio = HIGH });
+    tmb_push(b, (tm_io_t){ .clk = HIGH, .dio =  LOW });
+    tmb_push(b, (tm_io_t){ .clk =  LOW, .dio =  LOW });
+}
+
+void tmb_push_stop(tm_buffer_t *b) {
+    tmb_push(b, (tm_io_t){ .clk =  LOW, .dio =  LOW });
+    tmb_push(b, (tm_io_t){ .clk = HIGH, .dio =  LOW });
+    tmb_push(b, (tm_io_t){ .clk = HIGH, .dio = HIGH });
+}
+
+//void tmb_push_byte(tm_buffer_t *b, uint8_t byte) {
+//    for (uint8_t i = 0; i < 8; i++) {
+//        TM_CLK_L();
+//
+//        tm_delay();
+//
+//        if (byte & 1) {
+//            TM_DIO_H();
+//        } else {
+//            TM_DIO_L();
+//        }
+//
+//
+//        tm_delay();
+//
+//        TM_CLK_H();
+//
+//        tm_delay();
+//
+//        byte >>= 1;
+//    }
+//
+//
+//
+//
+//
+//
+//    tmb_push(b, (tm_io_t){ .clk = 1, .dio = 1 });
+//}
 
 
 
@@ -46,26 +142,42 @@ static inline void tm_delay(void) { _delay_us(20); }
 
 static void tm_write_byte(uint8_t b)
 {
+
+    
     for (uint8_t i = 0; i < 8; i++)
     {
         TM_CLK_L();
+
         tm_delay();
-        (b & 1) ? TM_DIO_H() : TM_DIO_L();
+
+
+        if (b & 1) {
+            TM_DIO_H();
+        } else {
+            TM_DIO_L();
+        }
+
         tm_delay();
+
         TM_CLK_H();
+
         tm_delay();
+
         b >>= 1;
     }
 
     TM_CLK_L();
+    TM_DIO_L();
 
     tm_delay();
 
     TM_CLK_H();
+    TM_DIO_L();
 
     tm_delay();
 
     TM_CLK_L();
+    TM_DIO_L();
 
     tm_delay();
 }
@@ -136,8 +248,101 @@ void keyboard_step() {
     previous = current;
 }
 
+
+uint8_t aaa = 0;
+
 void tm_step() {
 
+    const uint8_t digits[] = {
+        0x4F,  // 3
+        0,  // 2
+        segment_for_int(aaa),  // 1
+        0x7d,  // 6
+        0x6d,  // 5
+        0x66   // 4
+    };
+
+
+    // start
+
+    TM_CLK_H();
+    TM_DIO_H();
+
+    tm_delay();
+
+    TM_CLK_H();
+    TM_DIO_L();
+
+    tm_delay();
+
+    TM_CLK_L();
+    TM_DIO_L();
+
+    tm_delay();
+
+    // ...
+
+    tm_write_byte(0x40);
+
+    // stop
+
+    TM_CLK_L();
+    TM_DIO_L();
+
+    tm_delay();
+
+    TM_CLK_H();
+    TM_DIO_L();
+
+    tm_delay();
+
+    TM_CLK_H();
+    TM_DIO_H();
+
+    tm_delay();
+
+    // start
+
+    TM_CLK_H();
+    TM_DIO_H();
+
+    tm_delay();
+
+    TM_CLK_H();
+    TM_DIO_L();
+
+    tm_delay();
+
+    TM_CLK_L();
+    TM_DIO_L();
+
+    tm_delay();
+
+    // ..
+
+    tm_write_byte(0xC0);
+
+
+    for (uint8_t i = 0; i < 6; i++) {
+        tm_write_byte(digits[i]);
+    }
+
+    // stop
+
+    TM_CLK_L();
+    TM_DIO_L();
+
+    tm_delay();
+
+    TM_CLK_H();
+    TM_DIO_L();
+
+    tm_delay();
+
+    TM_CLK_H();
+    TM_DIO_H();
+
+    tm_delay();
 }
 
 void start() {
@@ -167,10 +372,43 @@ void start() {
     for(uint8_t i=0; i<6; i++) {
         segments[i] = i;
     }
+
+
+    TM_CLK_H();
+    TM_DIO_H();
+
+    tm_delay();
+
+    TM_DIO_L();
+
+    tm_delay();
+
+    TM_CLK_L();
+
+    tm_delay();
+
+
+    // display on + jasność max
+
+    tm_write_byte(0x80 | 0x08 | 0x07);
+
+
+    // stop
+
+    TM_CLK_L();
+    TM_DIO_L();
+
+    tm_delay();
+
+    TM_CLK_H();
+
+    tm_delay();
+
+    TM_DIO_H();
+
+    tm_delay();
 }
 
-uint8_t aaa = 0;
-uint8_t bbb = 0;
 
 void loop() {
     if (keyboard_check) {
@@ -178,10 +416,10 @@ void loop() {
         keyboard_step();
 
         if (keyboard_press & KEY_ESCAPE) {
-            aaa = !aaa;
+            aaa -= 1;
         }
         if (keyboard_release & KEY_BACK) {
-            bbb = !bbb;
+            aaa += 1;
         }
     }
 
@@ -190,90 +428,8 @@ void loop() {
         tm_step();
     }
 
-    buzz_set(aaa);
-    led_set(bbb);
-
-    const uint8_t digits[] = {
-        0x4F,  // 3
-        keyboard_release,  // 2
-        keyboard_press,  // 1
-        0x7d,  // 6
-        0x6d,  // 5
-        0x66   // 4
-    };
-
-
-    TM_CLK_H();
-    TM_DIO_H();
-
-    tm_delay();
-
-    TM_DIO_L();
-
-    tm_delay();
-
-    TM_CLK_L();
-
-    tm_delay();
-
-    tm_write_byte(0x40);
-
-
-
-
-
-    TM_CLK_L();             tm_delay();
-    TM_DIO_L();             tm_delay();
-    TM_CLK_H();             tm_delay();
-    TM_DIO_H();             tm_delay();
-
-
-    TM_CLK_H();
-    TM_DIO_H();
-
-    tm_delay();
-
-    TM_DIO_L();
-
-    tm_delay();
-
-    TM_CLK_L();
-
-    tm_delay();
-
-    tm_write_byte(0xC0);
-   
-
-    for (uint8_t i = 0; i < 6; i++) {
-        tm_write_byte(digits[i]);
-    }
-
-    TM_CLK_L();             tm_delay();
-    TM_DIO_L();             tm_delay();
-    TM_CLK_H();             tm_delay();
-    TM_DIO_H();             tm_delay();
-
-    TM_CLK_H();
-    TM_DIO_H();
-
-    tm_delay();
-
-    TM_DIO_L();
-
-    tm_delay();
-
-    TM_CLK_L();
-
-    tm_delay();
-
-
-    tm_write_byte(0x80 | 0x0F);
-
-
-    TM_CLK_L();             tm_delay();
-    TM_DIO_L();             tm_delay();
-    TM_CLK_H();             tm_delay();
-    TM_DIO_H();             tm_delay();
+//    buzz_set(aaa);
+//    led_set(bbb);
 }
 
 int main() {
