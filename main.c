@@ -18,6 +18,24 @@
 #define TM_DIO       PC0
 #define TM_CLK       PC1
 
+
+static inline void tm_delay(void) { _delay_us(20); }
+
+
+#define TM_DIO PC0
+#define TM_CLK PC1
+
+#define TM_DIO_OUT()   (DDRC |=  (1U << TM_DIO))
+#define TM_DIO_IN()    (DDRC &= ~(1U << TM_DIO))
+#define TM_DIO_H()     (PORTC |=  (1U << TM_DIO))
+#define TM_DIO_L()     (PORTC &= ~(1U << TM_DIO))
+#define TM_DIO_READ()  ((PINC >> TM_DIO) & 1U)
+
+#define TM_CLK_OUT()   (DDRC |=  (1U << TM_CLK))
+#define TM_CLK_H()     (PORTC |=  (1U << TM_CLK))
+#define TM_CLK_L()     (PORTC &= ~(1U << TM_CLK))
+
+
 volatile uint32_t timer_1ms = 0;
 volatile uint8_t tm_check = 0;
 volatile uint8_t keyboard_check = 0;
@@ -37,113 +55,45 @@ typedef struct {
     tm_state_t dio;
 } tm_io_t;
 
-#define TMB_SIZE 64
-
-typedef struct {
-    tm_io_t buffer[TMB_SIZE];
-    uint8_t head;
-    uint8_t tail;
-} tm_buffer_t;
-
-
-tm_buffer_t buffer;
-
-void tmb_init(tm_buffer_t *b) {
-    b->head = 0;
-    b->tail = 0;
-}
-
-bool tmb_push(tm_buffer_t *b, tm_io_t data) {
-    uint8_t next = (b->head + 1) % TMB_SIZE;
-
-    if (next == b->tail) {
-        return false;
+void tmb_push(tm_io_t io) {
+    switch (io.clk) {
+        case NONE:
+            break;
+        case HIGH:
+            TM_CLK_H();
+            break;
+        case LOW:
+            TM_DIO_H();
+            break;
     }
 
-    b->buffer[b->head] = data;
-    b->head = next;
-    return true;
-}
-
-bool tmb_is_empty(tm_buffer_t *b) {
-    return b->head == b->tail;
-}
-
-bool tmb_pop(tm_buffer_t *b, tm_io_t *data) {
-    if (tmb_is_empty(b)) {
-        return false;
+    switch (io.dio) {
+        case NONE:
+            break;
+        case HIGH:
+            TM_DIO_H();
+            break;
+        case LOW:
+            TM_DIO_L();
+            break;
     }
 
-    *data = b->buffer[b->tail];
-    b->tail = (b->tail + 1) % TMB_SIZE;
-
-    return true;
+    tm_delay();
 }
 
-void tmb_push_start(tm_buffer_t *b) {
-    tmb_push(b, (tm_io_t){ .clk = HIGH, .dio = HIGH });
-    tmb_push(b, (tm_io_t){ .clk = HIGH, .dio =  LOW });
-    tmb_push(b, (tm_io_t){ .clk =  LOW, .dio =  LOW });
+void tmb_push_start() {
+    tmb_push((tm_io_t){ .clk = HIGH, .dio = HIGH });
+    tmb_push((tm_io_t){ .clk = HIGH, .dio =  LOW });
+    tmb_push((tm_io_t){ .clk =  LOW, .dio =  LOW });
 }
 
-void tmb_push_stop(tm_buffer_t *b) {
-    tmb_push(b, (tm_io_t){ .clk =  LOW, .dio =  LOW });
-    tmb_push(b, (tm_io_t){ .clk = HIGH, .dio =  LOW });
-    tmb_push(b, (tm_io_t){ .clk = HIGH, .dio = HIGH });
+void tmb_push_stop() {
+    tmb_push((tm_io_t){ .clk =  LOW, .dio =  LOW });
+    tmb_push((tm_io_t){ .clk = HIGH, .dio =  LOW });
+    tmb_push((tm_io_t){ .clk = HIGH, .dio = HIGH });
 }
 
-//void tmb_push_byte(tm_buffer_t *b, uint8_t byte) {
-//    for (uint8_t i = 0; i < 8; i++) {
-//        TM_CLK_L();
-//
-//        tm_delay();
-//
-//        if (byte & 1) {
-//            TM_DIO_H();
-//        } else {
-//            TM_DIO_L();
-//        }
-//
-//
-//        tm_delay();
-//
-//        TM_CLK_H();
-//
-//        tm_delay();
-//
-//        byte >>= 1;
-//    }
-//
-//
-//
-//
-//
-//
-//    tmb_push(b, (tm_io_t){ .clk = 1, .dio = 1 });
-//}
-
-
-
-#define TM_DIO PC0
-#define TM_CLK PC1
-
-#define TM_DIO_OUT()   (DDRC |=  (1U << TM_DIO))
-#define TM_DIO_IN()    (DDRC &= ~(1U << TM_DIO))
-#define TM_DIO_H()     (PORTC |=  (1U << TM_DIO))
-#define TM_DIO_L()     (PORTC &= ~(1U << TM_DIO))
-#define TM_DIO_READ()  ((PINC >> TM_DIO) & 1U)
-
-#define TM_CLK_OUT()   (DDRC |=  (1U << TM_CLK))
-#define TM_CLK_H()     (PORTC |=  (1U << TM_CLK))
-#define TM_CLK_L()     (PORTC &= ~(1U << TM_CLK))
-
-static inline void tm_delay(void) { _delay_us(20); }
-
-
-static void tm_write_byte(uint8_t b)
-{
-
-    
+void tm_write_byte(uint8_t b) {
     for (uint8_t i = 0; i < 8; i++)
     {
         TM_CLK_L();
@@ -262,87 +212,16 @@ void tm_step() {
         0x66   // 4
     };
 
-
-    // start
-
-    TM_CLK_H();
-    TM_DIO_H();
-
-    tm_delay();
-
-    TM_CLK_H();
-    TM_DIO_L();
-
-    tm_delay();
-
-    TM_CLK_L();
-    TM_DIO_L();
-
-    tm_delay();
-
-    // ...
-
+    tmb_push_start();
     tm_write_byte(0x40);
+    tmb_push_stop();
 
-    // stop
-
-    TM_CLK_L();
-    TM_DIO_L();
-
-    tm_delay();
-
-    TM_CLK_H();
-    TM_DIO_L();
-
-    tm_delay();
-
-    TM_CLK_H();
-    TM_DIO_H();
-
-    tm_delay();
-
-    // start
-
-    TM_CLK_H();
-    TM_DIO_H();
-
-    tm_delay();
-
-    TM_CLK_H();
-    TM_DIO_L();
-
-    tm_delay();
-
-    TM_CLK_L();
-    TM_DIO_L();
-
-    tm_delay();
-
-    // ..
-
+    tmb_push_start();
     tm_write_byte(0xC0);
-
-
     for (uint8_t i = 0; i < 6; i++) {
         tm_write_byte(digits[i]);
     }
-
-    // stop
-
-    TM_CLK_L();
-    TM_DIO_L();
-
-    tm_delay();
-
-    TM_CLK_H();
-    TM_DIO_L();
-
-    tm_delay();
-
-    TM_CLK_H();
-    TM_DIO_H();
-
-    tm_delay();
+    tmb_push_stop();
 }
 
 void start() {
@@ -373,40 +252,9 @@ void start() {
         segments[i] = i;
     }
 
-
-    TM_CLK_H();
-    TM_DIO_H();
-
-    tm_delay();
-
-    TM_DIO_L();
-
-    tm_delay();
-
-    TM_CLK_L();
-
-    tm_delay();
-
-
-    // display on + jasność max
-
+    tmb_push_start();
     tm_write_byte(0x80 | 0x08 | 0x07);
-
-
-    // stop
-
-    TM_CLK_L();
-    TM_DIO_L();
-
-    tm_delay();
-
-    TM_CLK_H();
-
-    tm_delay();
-
-    TM_DIO_H();
-
-    tm_delay();
+    tmb_push_stop();
 }
 
 
