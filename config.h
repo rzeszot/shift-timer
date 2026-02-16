@@ -6,6 +6,7 @@
 typedef struct {
     uint8_t version;
     uint32_t buzz_time_ms;
+    uint32_t shift_time_s;
 } config_t;
 
 extern config_t config_eeprom;

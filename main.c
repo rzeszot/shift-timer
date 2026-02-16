@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <util/delay.h>
 #include "segments.h"
+#include "config.h"
 
 #define KEY_DEBOUNCE_MS   20
 #define KEY_LONG_PRESS_MS 500
@@ -22,6 +23,11 @@
 #define PORT_REG(x)      CONCAT(PORT, x)
 #define PIN_REG(x)       CONCAT(PIN, x)
 
+// MARK: -
+
+#define MIN(a,b) ((a) < (b) ? (a) : (b))
+#define MAX(a,b) ((a) > (b) ? (a) : (b))
+#define CLAMP(x,l,h) (MIN(MAX((x),(l)),(h)))
 
 // MARK: -
 
@@ -153,28 +159,27 @@ void buzz_set(uint8_t enabled) {
 
 // MARK: -
 
-
-
-
 volatile uint32_t timer_1ms = 0;
+volatile uint32_t timer_1s = 0;
 volatile uint8_t keyboard_check = 0;
+uint8_t keyboard_current;
 uint8_t keyboard_press;
 uint8_t keyboard_release;
-
-
-
-
 
 ISR(TIMER1_COMPA_vect) {
     timer_1ms += 1;
     keyboard_check = 1;
+
+    if (timer_1ms >= 1000) {
+        timer_1ms = 0;
+        timer_1s += 1;
+    }
 }
 
 void keyboard_step() {
     static uint8_t stable = 0x00;
     static uint8_t age[5] = { 0 };
 
-    static uint8_t current = 0x00;
     static uint8_t previous = 0x00;
 
     uint8_t raw = PINB;
@@ -195,19 +200,106 @@ void keyboard_step() {
                     stable &= ~mask;
                 }
 
-                current = stable ^ 0b00011111;
+                keyboard_current = stable ^ 0b00011111;
             }
         }
     }
 
-    keyboard_press   =  current & ~previous;
-    keyboard_release = ~current &  previous;
+    keyboard_press   =  keyboard_current & ~previous;
+    keyboard_release = ~keyboard_current &  previous;
 
-    previous = current;
+    previous = keyboard_current;
 }
 
-uint8_t aaa = 0;
 
+
+typedef enum {
+    BUZZ_TIME,
+    SHIFT_TIME
+} config_index_t;
+
+config_t config;
+config_index_t index;
+bool edit;
+
+void config_reset() {
+    index = BUZZ_TIME;
+    config = config_read();
+    edit = false;
+}
+
+void config_loop() {
+    for (uint8_t i=0; i<6; i++) {
+        segments[i] = 0;
+    }
+
+    if (edit) {
+        if (keyboard_press & KEY_ENTER) {
+            edit = false;
+            config_save(config);
+        } else if (keyboard_press & KEY_BACK) {
+            edit = false;
+            config = config_read();
+        } else {
+            switch (index) {
+                case BUZZ_TIME:
+                    if (keyboard_press & KEY_DOWN) {
+                        config.buzz_time_ms -= 1;
+                    } else if (keyboard_press & KEY_UP) {
+                        config.buzz_time_ms += 1;
+                    }
+                    break;
+                case SHIFT_TIME:
+                    if (keyboard_press & KEY_DOWN) {
+                        config.shift_time_s -= 1;
+                    } else if (keyboard_press & KEY_UP) {
+                        config.shift_time_s += 1;
+                    }
+                    break;
+            }
+        }
+
+
+    } else {
+        if (keyboard_press & KEY_DOWN) {
+            index += 1;
+        } else if (keyboard_press & KEY_UP) {
+            index -= 1;
+        } else if (keyboard_press & KEY_ENTER) {
+            edit = true;
+        }
+
+    }
+
+    index = CLAMP(index, BUZZ_TIME, SHIFT_TIME);
+    segments[0] = segment_for_int(index);
+    segments[0] = segment_for_int(index);
+
+    if (edit) {
+        if (timer_1s % 2) {
+            segments[0] |= 0x80;
+        }
+    } else {
+        segments[0] |= 0x80;
+    }
+
+    switch (index) {
+        case BUZZ_TIME:
+            segments[2] = segment_for_int(config.buzz_time_ms / 1000 % 10);
+            segments[3] = segment_for_int(config.buzz_time_ms / 100 % 10);
+            segments[4] = segment_for_int(config.buzz_time_ms / 10 % 10);
+            segments[5] = segment_for_int(config.buzz_time_ms / 1 % 10);
+            break;
+        case SHIFT_TIME:
+            segments[2] = segment_for_int(config.shift_time_s / 1000 % 10);
+            segments[3] = segment_for_int(config.shift_time_s / 100 % 10);
+            segments[4] = segment_for_int(config.shift_time_s / 10 % 10);
+            segments[5] = segment_for_int(config.shift_time_s / 1 % 10);
+            break;
+    }
+
+    segments_update();
+}
 
 
 
@@ -217,6 +309,8 @@ void reset() {
     for (uint8_t i=0; i<6; i++) {
         segments[i] = 0;
     }
+
+    config_reset();
 }
 
 void start() {
@@ -238,25 +332,17 @@ void start() {
     segments_update();
 }
 
+
+
+
+
 void loop() {
     if (keyboard_check) {
         keyboard_check = 0;
         keyboard_step();
-
-        uint8_t qqq = aaa;
-
-        if (keyboard_press & KEY_DOWN) {
-            aaa -= 1;
-        }
-        if (keyboard_release & KEY_UP) {
-            aaa += 1;
-        }
-
-        if (aaa != qqq) {
-            segments[5] = segment_for_int(aaa);
-            segments_update();
-        }
     }
+
+    config_loop();
 }
 
 int main() {
