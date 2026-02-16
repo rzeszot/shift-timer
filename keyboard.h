@@ -10,8 +10,8 @@ typedef struct {
     uint8_t press;
     uint8_t release;
 
-//    uint8_t held;
-//    uint32_t time[8];
+    uint8_t held;
+    uint32_t time[8];
 } keyboard_t;
 
 keyboard_t keyboard_new();

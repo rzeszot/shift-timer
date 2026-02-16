@@ -4,7 +4,7 @@
 config_t EEMEM config_eeprom;
 
 const config_t config_default = {
-    .version      = 1,
+    .version      = 2,
     .buzz_time_ms = 3000,
     .shift_time_s = 120
 };

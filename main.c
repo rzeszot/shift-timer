@@ -6,6 +6,7 @@
 #include <util/delay.h>
 #include "segments.h"
 #include "config.h"
+#include "keyboard.h"
 
 #define KEY_DEBOUNCE_MS   20
 #define KEY_LONG_PRESS_MS 500
@@ -162,9 +163,9 @@ void buzz_set(uint8_t enabled) {
 volatile uint32_t timer_1ms = 0;
 volatile uint32_t timer_1s = 0;
 volatile uint8_t keyboard_check = 0;
-uint8_t keyboard_current;
-uint8_t keyboard_press;
-uint8_t keyboard_release;
+
+keyboard_t keys;
+
 
 ISR(TIMER1_COMPA_vect) {
     timer_1ms += 1;
@@ -180,9 +181,8 @@ void keyboard_step() {
     static uint8_t stable = 0x00;
     static uint8_t age[5] = { 0 };
 
-    static uint8_t previous = 0x00;
-
     uint8_t raw = PINB;
+    uint8_t current = keys.current;
 
     for (uint8_t i = 0; i < 5; i++) {
         uint8_t mask = (1 << i);
@@ -200,15 +200,12 @@ void keyboard_step() {
                     stable &= ~mask;
                 }
 
-                keyboard_current = stable ^ 0b00011111;
+                current = stable ^ 0b00011111;
             }
         }
     }
 
-    keyboard_press   =  keyboard_current & ~previous;
-    keyboard_release = ~keyboard_current &  previous;
-
-    previous = keyboard_current;
+    keyboard_process(&keys, current);
 }
 
 
@@ -234,45 +231,58 @@ void config_loop() {
     }
 
     if (edit) {
-        if (keyboard_press & KEY_ENTER) {
+        if (keys.press & KEY_ENTER) {
             edit = false;
             config_save(config);
-        } else if (keyboard_press & KEY_BACK) {
+        } else if (keys.press & KEY_BACK) {
             edit = false;
             config = config_read();
         } else {
             switch (index) {
                 case BUZZ_TIME:
-                    if (keyboard_press & KEY_DOWN) {
+                    if (keys.held & KEY_UP) {
+                        config.buzz_time_ms += 1;
+                    } else if (keys.held & KEY_DOWN) {
                         config.buzz_time_ms -= 1;
-                    } else if (keyboard_press & KEY_UP) {
+                    } else if (keys.press & KEY_DOWN) {
+                        config.buzz_time_ms -= 1;
+                    } else if (keys.press & KEY_UP) {
                         config.buzz_time_ms += 1;
                     }
+                    config.buzz_time_ms = CLAMP(config.buzz_time_ms, 100, 5 * 1000); // 100ms - 5s
                     break;
                 case SHIFT_TIME:
-                    if (keyboard_press & KEY_DOWN) {
+                    if (keys.held & KEY_UP) {
+                        config.shift_time_s += 1;
+                    } else if (keys.held & KEY_DOWN) {
                         config.shift_time_s -= 1;
-                    } else if (keyboard_press & KEY_UP) {
+                    } else if (keys.press & KEY_DOWN) {
+                        config.shift_time_s -= 1;
+                    } else if (keys.press & KEY_UP) {
                         config.shift_time_s += 1;
                     }
+                    config.shift_time_s = CLAMP(config.shift_time_s, 10, 20 * 60); // 10s - 20m
                     break;
             }
         }
-
-
     } else {
-        if (keyboard_press & KEY_DOWN) {
-            index += 1;
-        } else if (keyboard_press & KEY_UP) {
-            index -= 1;
-        } else if (keyboard_press & KEY_ENTER) {
+        if (keys.press & KEY_UP) {
+            if (index == SHIFT_TIME) {
+                index = BUZZ_TIME;
+            } else {
+                index += 1;
+            }
+        } else if (keys.press & KEY_DOWN) {
+            if (index == 0) {
+                index = SHIFT_TIME;
+            } else {
+                index -= 1;
+            }
+        } else if (keys.press & KEY_ENTER) {
             edit = true;
         }
-
     }
 
-    index = CLAMP(index, BUZZ_TIME, SHIFT_TIME);
-    segments[0] = segment_for_int(index);
     segments[0] = segment_for_int(index);
 
     if (edit) {
@@ -311,6 +321,7 @@ void reset() {
     }
 
     config_reset();
+    keys = keyboard_new();
 }
 
 void start() {
@@ -333,14 +344,12 @@ void start() {
 }
 
 
-
-
-
 void loop() {
     if (keyboard_check) {
         keyboard_check = 0;
         keyboard_step();
     }
+
 
     config_loop();
 }
