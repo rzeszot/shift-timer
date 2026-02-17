@@ -88,10 +88,10 @@ void editor_loop(uint8_t segments[6], keyboard_t keys) {
             segments[5] = segment_for_int(editor_config.buzz_time_ms / 1 % 10);
             break;
         case SHIFT_TIME:
-            segments[2] = segment_for_int(editor_config.shift_time_s / 1000 % 10);
-            segments[3] = segment_for_int(editor_config.shift_time_s / 100 % 10);
-            segments[4] = segment_for_int(editor_config.shift_time_s / 10 % 10);
-            segments[5] = segment_for_int(editor_config.shift_time_s / 1 % 10);
+            segments[2] = segment_for_int((editor_config.shift_time_s / 60 / 10) % 10);
+            segments[3] = segment_for_int((editor_config.shift_time_s / 60 /  1) % 10) | 0x80;
+            segments[4] = segment_for_int((editor_config.shift_time_s % 60 / 10) % 10);
+            segments[5] = segment_for_int((editor_config.shift_time_s % 60 /  1) % 10);
             break;
     }
 
