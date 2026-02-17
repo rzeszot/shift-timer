@@ -31,16 +31,12 @@ void editor_loop(uint8_t segments[6], keyboard_t keys) {
         } else {
             switch (editor_index) {
                 case BUZZ_TIME:
-                    if (keys.held & KEY_UP) {
-                        editor_config.buzz_time_ms += 1;
-                    } else if (keys.held & KEY_DOWN) {
-                        editor_config.buzz_time_ms -= 1;
-                    } else if (keys.press & KEY_DOWN) {
-                        editor_config.buzz_time_ms -= 1;
-                    } else if (keys.press & KEY_UP) {
-                        editor_config.buzz_time_ms += 1;
+                    if (keys.held & KEY_UP || keys.press & KEY_UP) {
+                        editor_config.buzz_time_ms += 10;
+                    } else if (keys.held & KEY_DOWN || keys.press & KEY_DOWN) {
+                        editor_config.buzz_time_ms -= 10;
                     }
-                    editor_config.buzz_time_ms = CLAMP(editor_config.buzz_time_ms, 100, 5 * 1000); // 100ms - 5s
+                    editor_config.buzz_time_ms = CLAMP(editor_config.buzz_time_ms, 10, 15 * 1000); // 10ms - 15s
                     break;
                 case SHIFT_TIME:
                     if (keys.held & KEY_UP) {
@@ -82,10 +78,10 @@ void editor_loop(uint8_t segments[6], keyboard_t keys) {
 
     switch (editor_index) {
         case BUZZ_TIME:
-            segments[2] = segment_for_int(editor_config.buzz_time_ms / 1000 % 10);
-            segments[3] = segment_for_int(editor_config.buzz_time_ms / 100 % 10);
-            segments[4] = segment_for_int(editor_config.buzz_time_ms / 10 % 10);
-            segments[5] = segment_for_int(editor_config.buzz_time_ms / 1 % 10);
+            segments[2] = segment_for_int(editor_config.buzz_time_ms / 10000 % 10);
+            segments[3] = segment_for_int(editor_config.buzz_time_ms / 1000 % 10) | 0x80;
+            segments[4] = segment_for_int(editor_config.buzz_time_ms / 100 % 10) ;
+            segments[5] = segment_for_int(editor_config.buzz_time_ms / 10 % 10);
             break;
         case SHIFT_TIME:
             segments[2] = segment_for_int((editor_config.shift_time_s / 60 / 10) % 10);
