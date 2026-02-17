@@ -10,12 +10,7 @@
 
 #define KEY_DEBOUNCE_MS   20
 #define KEY_LONG_PRESS_MS 500
-
-#define KEY_ESCAPE  (1 << PB0)
-#define KEY_BACK    (1 << PB1)
-#define KEY_DOWN    (1 << PB2)
-#define KEY_UP      (1 << PB3)
-#define KEY_ENTER   (1 << PB4)
+#include "editor.h"
 
 // MARK: -
 
@@ -23,12 +18,6 @@
 #define DDR_REG(x)       CONCAT(DDR, x)
 #define PORT_REG(x)      CONCAT(PORT, x)
 #define PIN_REG(x)       CONCAT(PIN, x)
-
-// MARK: -
-
-#define MIN(a,b) ((a) < (b) ? (a) : (b))
-#define MAX(a,b) ((a) > (b) ? (a) : (b))
-#define CLAMP(x,l,h) (MIN(MAX((x),(l)),(h)))
 
 // MARK: -
 
@@ -210,109 +199,6 @@ void keyboard_step() {
 
 
 
-typedef enum {
-    BUZZ_TIME,
-    SHIFT_TIME
-} config_index_t;
-
-config_t config;
-config_index_t index;
-bool edit;
-
-void config_reset() {
-    index = BUZZ_TIME;
-    config = config_read();
-    edit = false;
-}
-
-void config_loop() {
-    for (uint8_t i=0; i<6; i++) {
-        segments[i] = 0;
-    }
-
-    if (edit) {
-        if (keys.press & KEY_ENTER) {
-            edit = false;
-            config_save(config);
-        } else if (keys.press & KEY_BACK) {
-            edit = false;
-            config = config_read();
-        } else {
-            switch (index) {
-                case BUZZ_TIME:
-                    if (keys.held & KEY_UP) {
-                        config.buzz_time_ms += 1;
-                    } else if (keys.held & KEY_DOWN) {
-                        config.buzz_time_ms -= 1;
-                    } else if (keys.press & KEY_DOWN) {
-                        config.buzz_time_ms -= 1;
-                    } else if (keys.press & KEY_UP) {
-                        config.buzz_time_ms += 1;
-                    }
-                    config.buzz_time_ms = CLAMP(config.buzz_time_ms, 100, 5 * 1000); // 100ms - 5s
-                    break;
-                case SHIFT_TIME:
-                    if (keys.held & KEY_UP) {
-                        config.shift_time_s += 1;
-                    } else if (keys.held & KEY_DOWN) {
-                        config.shift_time_s -= 1;
-                    } else if (keys.press & KEY_DOWN) {
-                        config.shift_time_s -= 1;
-                    } else if (keys.press & KEY_UP) {
-                        config.shift_time_s += 1;
-                    }
-                    config.shift_time_s = CLAMP(config.shift_time_s, 10, 20 * 60); // 10s - 20m
-                    break;
-            }
-        }
-    } else {
-        if (keys.press & KEY_UP) {
-            if (index == SHIFT_TIME) {
-                index = BUZZ_TIME;
-            } else {
-                index += 1;
-            }
-        } else if (keys.press & KEY_DOWN) {
-            if (index == 0) {
-                index = SHIFT_TIME;
-            } else {
-                index -= 1;
-            }
-        } else if (keys.press & KEY_ENTER) {
-            edit = true;
-        }
-    }
-
-    segments[0] = segment_for_int(index);
-
-    if (edit) {
-        if (timer_1s % 2) {
-            segments[0] |= 0x80;
-        }
-    } else {
-        segments[0] |= 0x80;
-    }
-
-    switch (index) {
-        case BUZZ_TIME:
-            segments[2] = segment_for_int(config.buzz_time_ms / 1000 % 10);
-            segments[3] = segment_for_int(config.buzz_time_ms / 100 % 10);
-            segments[4] = segment_for_int(config.buzz_time_ms / 10 % 10);
-            segments[5] = segment_for_int(config.buzz_time_ms / 1 % 10);
-            break;
-        case SHIFT_TIME:
-            segments[2] = segment_for_int(config.shift_time_s / 1000 % 10);
-            segments[3] = segment_for_int(config.shift_time_s / 100 % 10);
-            segments[4] = segment_for_int(config.shift_time_s / 10 % 10);
-            segments[5] = segment_for_int(config.shift_time_s / 1 % 10);
-            break;
-    }
-
-    segments_update();
-}
-
-
-
 void reset() {
     buzz_set(0);
 
@@ -320,7 +206,7 @@ void reset() {
         segments[i] = 0;
     }
 
-    config_reset();
+    editor_reset();
     keys = keyboard_new();
 }
 
@@ -351,7 +237,7 @@ void loop() {
     }
 
 
-    config_loop();
+    editor_loop(segments, keys);
 }
 
 int main() {

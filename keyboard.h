@@ -2,6 +2,13 @@
 #define KEYBOARD_H
 
 #include <stdint.h>
+#include <avr/io.h>
+
+#define KEY_ESCAPE  (1 << PB0)
+#define KEY_BACK    (1 << PB1)
+#define KEY_DOWN    (1 << PB2)
+#define KEY_UP      (1 << PB3)
+#define KEY_ENTER   (1 << PB4)
 
 typedef struct {
     uint8_t current;
