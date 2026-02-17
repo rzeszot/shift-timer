@@ -238,6 +238,7 @@ void loop() {
 
 
     editor_loop(segments, keys);
+    segments_update();
 }
 
 int main() {

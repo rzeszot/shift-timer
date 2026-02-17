@@ -94,6 +94,4 @@ void editor_loop(uint8_t segments[6], keyboard_t keys) {
             segments[5] = segment_for_int((editor_config.shift_time_s % 60 /  1) % 10);
             break;
     }
-
-    segments_update();
 }
