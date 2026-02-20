@@ -16,6 +16,19 @@ void editor_reset() {
     editor_config = config_read();
 }
 
+
+editor_index_t editor_index_next(editor_index_t value) {
+    return (value + 1) % (PLACEHOLDER + 1);
+}
+
+editor_index_t editor_index_previous(editor_index_t value) {
+    if (value == BUZZ_TIME) {
+        return PLACEHOLDER;
+    } else {
+        return value - 1;
+    }
+}
+
 void editor_loop(uint8_t segments[6], keyboard_t keys) {
     for (uint8_t i=0; i<6; i++) {
         segments[i] = 0;
@@ -50,21 +63,15 @@ void editor_loop(uint8_t segments[6], keyboard_t keys) {
                     }
                     editor_config.shift_time_s = CLAMP(editor_config.shift_time_s, 10, 20 * 60); // 10s - 20m
                     break;
+                case PLACEHOLDER:
+                    break;
             }
         }
     } else {
         if (keys.press & KEY_UP) {
-            if (editor_index == SHIFT_TIME) {
-                editor_index = BUZZ_TIME;
-            } else {
-                editor_index += 1;
-            }
+            editor_index = editor_index_next(editor_index);
         } else if (keys.press & KEY_DOWN) {
-            if (editor_index == 0) {
-                editor_index = SHIFT_TIME;
-            } else {
-                editor_index -= 1;
-            }
+            editor_index = editor_index_previous(editor_index);
         } else if (keys.press & KEY_ENTER) {
             editor_edit = true;
         }
@@ -88,6 +95,8 @@ void editor_loop(uint8_t segments[6], keyboard_t keys) {
             segments[3] = segment_for_int((editor_config.shift_time_s / 60 /  1) % 10) | 0x80;
             segments[4] = segment_for_int((editor_config.shift_time_s % 60 / 10) % 10);
             segments[5] = segment_for_int((editor_config.shift_time_s % 60 /  1) % 10);
+            break;
+        case PLACEHOLDER:
             break;
     }
 }

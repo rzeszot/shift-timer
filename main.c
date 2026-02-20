@@ -214,6 +214,8 @@ void start() {
     DDRB &= ~((1 << PB0) | (1 << PB1) | (1 << PB2) | (1 << PB3) | (1 << PB4));
     PORTB |= (1 << PB0) | (1 << PB1) | (1 << PB2) | (1 << PB3) | (1 << PB4);
 
+    PORTD |= (1 << PD0) | (1 << PD1) | (1 << PD2) | (1 << PD3);
+
     PORTC |= (1 << PC5);
 
     TCCR1A = 0;
@@ -230,6 +232,8 @@ void start() {
 }
 
 
+bool buzz = false;
+
 void loop() {
     if (keyboard_check) {
         keyboard_check = 0;
@@ -239,6 +243,11 @@ void loop() {
 
     editor_loop(segments, keys);
     segments_update();
+
+    if (keys.press & KEY_ESCAPE) {
+        buzz = !buzz;
+        buzz_set(buzz);
+    }
 }
 
 int main() {
