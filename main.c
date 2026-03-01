@@ -7,9 +7,11 @@
 #include "segments.h"
 #include "config.h"
 #include "keyboard.h"
+#include "buzz.h"
 
 #define KEY_DEBOUNCE_MS   20
 #define KEY_LONG_PRESS_MS 500
+#include "game.h"
 #include "editor.h"
 
 // MARK: -
@@ -136,22 +138,12 @@ void segments_update() {
 
 // MARK: -
 
-void buzz_set(uint8_t enabled) {
-    DDRC |= (1 << PC5);
-
-    if (enabled) {
-        PORTC &= ~(1 << PC5);
-    } else {
-        PORTC |= (1 << PC5);
-    }
-}
-
-
-// MARK: -
-
 volatile uint32_t timer_1ms = 0;
+volatile uint32_t timer_100ms = 0;
 volatile uint32_t timer_1s = 0;
+
 volatile uint8_t keyboard_check = 0;
+volatile uint8_t timer_100ms_check = 0;
 
 keyboard_t keys;
 
@@ -160,8 +152,14 @@ ISR(TIMER1_COMPA_vect) {
     timer_1ms += 1;
     keyboard_check = 1;
 
-    if (timer_1ms >= 1000) {
+    if (timer_1ms >= 100) {
+        timer_100ms += 1;
         timer_1ms = 0;
+        timer_100ms_check = 1;
+    }
+
+    if (timer_100ms >= 10) {
+        timer_100ms = 0;
         timer_1s += 1;
     }
 }
@@ -199,6 +197,12 @@ void keyboard_step() {
 
 
 
+
+
+
+
+
+
 void reset() {
     buzz_set(0);
 
@@ -207,6 +211,8 @@ void reset() {
     }
 
     editor_reset();
+    game_reset();
+
     keys = keyboard_new();
 }
 
@@ -229,6 +235,8 @@ void start() {
 
     segments_init();
     segments_update();
+
+    game_enter();
 }
 
 
@@ -240,8 +248,16 @@ void loop() {
         keyboard_step();
     }
 
+    if (timer_100ms_check) {
+        timer_100ms_check = 0;
+        game_tick_100ms();
+    }
 
-    editor_loop(segments, keys);
+
+    game_loop(segments, keys);
+
+
+//    editor_loop(segments, keys);
     segments_update();
 
     if (keys.press & KEY_ESCAPE) {

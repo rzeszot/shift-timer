@@ -18,8 +18,7 @@ extern bool editor_edit;
 extern config_t editor_config;
 
 void editor_reset();
+void editor_enter();
 void editor_loop(uint8_t segments[6], keyboard_t keys);
-editor_index_t editor_index_next(editor_index_t value);
-editor_index_t editor_index_previous(editor_index_t value);
 
 #endif

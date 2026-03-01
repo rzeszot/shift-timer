@@ -16,7 +16,6 @@ void editor_reset() {
     editor_config = config_read();
 }
 
-
 editor_index_t editor_index_next(editor_index_t value) {
     return (value + 1) % (PLACEHOLDER + 1);
 }
@@ -27,6 +26,10 @@ editor_index_t editor_index_previous(editor_index_t value) {
     } else {
         return value - 1;
     }
+}
+
+void editor_enter() {
+
 }
 
 void editor_loop(uint8_t segments[6], keyboard_t keys) {
