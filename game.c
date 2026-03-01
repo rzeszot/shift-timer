@@ -31,8 +31,8 @@ void game_reset() {
 void game_enter() {
     config_t config = config_read();
 
-    game_state.buzz_time_ms = 3000; // config.buzz_time_ms;
-    game_state.shift_time_s = 10; // config.shift_time_s;
+    game_state.buzz_time_ms = config.buzz_time_ms;
+    game_state.shift_time_s = config.shift_time_s;
 
     game_index = INTRO;
 
@@ -45,7 +45,7 @@ void game_tick_100ms() {
         case INTRO:
             break;
         case RUNNING_GAME:
-            game_state.left_ms -= 50;
+            game_state.left_ms -= 100;
 
             if (game_state.left_ms == 0) {
                 game_state.left_ms = game_state.buzz_time_ms;
@@ -53,7 +53,7 @@ void game_tick_100ms() {
             }
             break;
         case RUNNING_BUZZ:
-            game_state.left_ms -= 50;
+            game_state.left_ms -= 100;
             if (game_state.left_ms == 0) {
                 game_state.left_ms = game_state.shift_time_s * 1000;
                 game_index = RUNNING_GAME;
@@ -67,30 +67,37 @@ void game_loop(uint8_t segments[6], keyboard_t keys) {
         segments[i] = 0;
     }
 
+    display_t time = {
+        .minutes = 0,
+        .seconds = 0,
+        .tenths = 0
+    };
+
     switch (game_index) {
         case INTRO:
+            time = time_ms_to_display(game_state.shift_time_s * 1000);
             if (keys.press & KEY_ENTER) {
                 game_state.left_ms = game_state.shift_time_s * 1000;
                 game_index = RUNNING_GAME;
             }
             break;
-
         case RUNNING_GAME:
             buzz_set(0);
+            time = time_ms_to_display(game_state.left_ms);
             break;
         case RUNNING_BUZZ:
             buzz_set(1);
+            time = time_ms_to_display(game_state.left_ms);
             break;
     }
 
-    display_t time = time_ms_to_display(game_state.left_ms);
-
     switch (game_index) {
         case INTRO:
-            segments[2] = segment_for_int((game_state.shift_time_s / 60 / 10) % 10);
-            segments[3] = segment_for_int((game_state.shift_time_s / 60 /  1) % 10) | 0x80;
-            segments[4] = segment_for_int((game_state.shift_time_s % 60 / 10) % 10);
-            segments[5] = segment_for_int((game_state.shift_time_s % 60 /  1) % 10);
+            segments[1] = segment_for_int(time.minutes / 10);
+            segments[2] = segment_for_int(time.minutes % 10) | 0x80;
+            segments[3] = segment_for_int(time.seconds / 10);
+            segments[4] = segment_for_int(time.seconds % 10) | 0x80;
+            segments[5] = segment_for_int(time.tenths);
             break;
 
         case RUNNING_GAME:
